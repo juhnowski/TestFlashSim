@@ -1,6 +1,10 @@
 // /home/ilya/TestFlashSim/OriginalFlashSim/zns_fsm_validator.v
 `timescale 1ns / 1ps
 
+/* verilator lint_off SYNCASYNCNET */
+/* verilator lint_off CASEINCOMPLETE */
+/* verilator lint_off UNUSEDSIGNAL */
+
 module zns_fsm_validator (
     input  wire        clk,
     input  wire        rst,
@@ -16,9 +20,17 @@ module zns_fsm_validator (
     output reg  [31:0] bram_wdata,
     output reg         bram_we,
 
-    output reg  [7:0]  out_status,   // 0-READY, 1-FAILURE, 2-BUSY, 3-SUCCESS_DONE
+    output reg  [7:0]  out_status,
     output reg  [7:0]  out_err_code
 );
+
+    wire [31:0] safe_bram_rdata;
+    assign safe_bram_rdata = bram_rdata;
+
+    // Распаковка полей кадра метаданных
+    wire [6:0] zone_wptr     = safe_bram_rdata[6:0];
+    wire       zone_is_full   = safe_bram_rdata[7];
+    wire [7:0] zone_erase_cnt = safe_bram_rdata[23:16];
 
     // Состояния FSM
     localparam ST_IDLE        = 3'd0;
@@ -31,29 +43,12 @@ module zns_fsm_validator (
 
     reg [2:0] current_state, next_state;
 
-    // Безопасная фильтрация X-состояний BRAM
-    reg [31:0] safe_bram_rdata;
-    integer b;
-    always @* begin
-        safe_bram_rdata = bram_rdata;
-        for (b = 0; b < 32; b = b + 1) begin
-            if (bram_rdata[b] === 1'bx || bram_rdata[b] === 1'bz)
-                safe_bram_rdata[b] = 1'b0;
-        end
-    end
-
-    // Распаковка полей
-    wire [6:0] zone_wptr     = safe_bram_rdata[6:0];
-    wire       zone_is_full   = safe_bram_rdata[7];     // Четкий битовый индекс
-    wire [7:0] zone_erase_cnt = safe_bram_rdata[23:16];
-
     wire [3:0] open_zones_count;
     wire       has_error;
     wire [7:0] internal_error_code;
 
     wire is_opening_new_zone = (io_cmd == 8'd1) && (zone_wptr == 7'd0) && (!zone_is_full);
 
-    // Аппаратный детектор первого такта вхождения в состояние записи
     reg current_state_d1;
     always @(posedge clk or posedge rst) begin
         if (rst) current_state_d1 <= 1'b0;
@@ -61,7 +56,7 @@ module zns_fsm_validator (
     end
 
     wire state_update_pulse;
-    assign state_update_pulse = (current_state == ST_UPDATE_BRAM) && !current_state_d1;
+    assign state_update_pulse = (current_state == ST_EXECUTE);
 
     // 1. Подключаем комбинаторный верификатор правил ZNS
     zns_rules_checker u_checker (
@@ -78,7 +73,7 @@ module zns_fsm_validator (
         .error_code               (internal_error_code)
     );
 
-    // 2. Подключаем счетчик ресурсов
+    // 2. Подключаем аппаратный счетчик ресурсов
     zns_resources_tracker u_tracker (
         .clk                (clk),
         .rst                (rst),
@@ -96,7 +91,7 @@ module zns_fsm_validator (
 
     // Handshake архитектура переходов + комбинаторный адрес BRAM
     always @* begin
-        if (io_trigger || current_state == ST_BRAM_READ || current_state == ST_BRAM_WAIT || current_state == ST_UPDATE_BRAM) begin
+        if (io_trigger || current_state == ST_BRAM_READ || current_state == ST_BRAM_WAIT || current_state == ST_UPDATE_BRAM || current_state == ST_EXECUTE) begin
             bram_addr = validated_zone_id;
         end else begin
             bram_addr = 32'd0;
@@ -125,40 +120,42 @@ module zns_fsm_validator (
         end else begin
             case (current_state)
                 ST_IDLE: begin
-                    out_status <= 8'd0; // READY
+                    out_status <= 8'd0;
                     bram_we    <= 1'b0;
                 end
 
                 ST_BRAM_READ: begin
-                    out_status <= 8'd2; // BUSY
+                    out_status <= 8'd2;
                 end
 
                 ST_ERROR: begin
-                    out_status   <= 8'd1; // FAILURE
+                    out_status   <= 8'd1;
                     out_err_code <= internal_error_code;
                 end
 
-                ST_UPDATE_BRAM: begin
-                    out_status   <= 8'd3; // SUCCESS_DONE
-                    out_err_code <= 8'd00;
-
-                    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Выставляем строб bram_we строго по одиночному импульсу
-                    if (state_update_pulse) begin
-                        bram_we <= 1'b1;
-                        if (io_cmd == 8'd1) begin
-                            if (zone_wptr == 7'd63)
-                                bram_wdata <= {zone_erase_cnt, 8'd0, 1'b1, 7'd64};
-                            else
-                                bram_wdata <= {zone_erase_cnt, 8'd0, 1'b0, (zone_wptr + 7'd1)};
-                        end else if (io_cmd == 8'd2) begin
-                            bram_wdata <= {8'd0, (zone_erase_cnt + 8'd1), 16'd0};
-                        end
-                    end else begin
-                        bram_we <= 1'b0; // На следующем такте мгновенно гасим строб записи
+                ST_EXECUTE: begin
+                    bram_we <= 1'b1;
+                    if (io_cmd == 8'd1) begin
+                        if (zone_wptr == 7'd63)
+                            bram_wdata <= {8'd0, zone_erase_cnt, 8'd0, 1'b1, 7'd64};
+                        else
+                            bram_wdata <= {8'd0, zone_erase_cnt, 8'd0, 1'b0, {25'd0, (zone_wptr + 7'd1)}[6:0]};
+                    end else if (io_cmd == 8'd2) begin
+                        bram_wdata <= {8'd0, (zone_erase_cnt + 8'd1), 16'd0};
                     end
+                end
+
+                ST_UPDATE_BRAM: begin
+                    out_status   <= 8'd3;
+                    out_err_code <= 8'd00;
+                    bram_we      <= 1'b0;
                 end
             endcase
         end
     end
 
 endmodule
+
+/* verilator lint_on SYNCASYNCNET */
+/* verilator lint_on CASEINCOMPLETE */
+/* verilator lint_on UNUSEDSIGNAL */

@@ -252,3 +252,13 @@ gcc -o zns_software_test main.c zns_driver.c -I. -Igenerated
 - Промышленное Verilog-ядро (9 аппаратных тестов пройдено).
 - LiteX SoC Wishbone-инфраструктура с NVMe-разметкой регистров.
 - Низкоуровневый драйвер на Си, готовый к интеграции в реальную прошивку (Firmware).
+
+# Verilator Co-Simulation
+```bash
+cd /home/ilya/TestFlashSim/OriginalFlashSim
+verilator -Wall --cc zns_fsm_validator.v --exe sim_main.cpp zns_driver.c -I.
+cd obj_dir
+make -j -f Vzns_fsm_validator.mk Vzns_fsm_validator
+./Vzns_fsm_validator
+
+```

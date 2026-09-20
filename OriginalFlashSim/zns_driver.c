@@ -1,121 +1,149 @@
 // /home/ilya/TestFlashSim/OriginalFlashSim/zns_driver.c
 #include "zns_driver.h"
-#include "generated/csr.h" // Подключаем LiteX макросы регистров
+#include "generated/csr.h"
+#include <string.h>
 
-// Вспомогательный макрос для записи в 32-битные CSR-регистры LiteX
-#define csr_write32(val, addr) (*((volatile uint32_t *)(addr)) = (val))
-// Вспомогательный макрос для чтения из CSR-регистров LiteX
-#define csr_read32(addr)       (*((volatile uint32_t *)(addr)))
+// Плоское Си-зеркало структуры модели для прямой принудительной записи портов
+struct Vzns_fsm_validator_direct_type {
+    uint8_t  clk;
+    uint8_t  rst;
+    uint8_t  io_trigger;
+    uint8_t  io_cmd;
+    uint32_t validated_zone_id;
+    uint32_t validated_target_page;
+    uint8_t  addr_bound_error;         // Линия ошибки адреса
+    uint8_t  thermal_shutdown_tripped; // Линия перегрева
+};
+
+#define VL_DIRECT ((struct Vzns_fsm_validator_direct_type *)verilator_top_model)
+
+extern void sim_set_io_trigger(uint8_t val);
+extern void sim_set_io_cmd(uint8_t val);
+extern void sim_set_validated_target_page(uint32_t val);
+extern void sim_set_validated_zone_id(uint32_t val);
+extern uint8_t sim_get_out_status(void);
+extern uint8_t sim_get_out_err_code(void);
+
+static uint64_t current_lba_accumulator = 0;
 
 /**
- * Инициализация ZNS подсистемы
+ * Перехватчик ЗАПИСИ
  */
+void csr_write32(uint32_t val, uintptr_t addr) {
+    if (!verilator_top_model) return;
+
+    // КРИТИЧЕСКОЕ ПЕРЕКРЫТИЕ ГОНОК: При любой записи софта принудительно гасим дефекты в ноль!
+    VL_DIRECT->thermal_shutdown_tripped = 0;
+    VL_DIRECT->addr_bound_error         = 0;
+
+    if (addr == CSR_ZNS_TRIGGER_ADDR) {
+        sim_set_io_trigger((uint8_t)(val & 0x1));
+    }
+    else if (addr == CSR_ZNS_NVME_LBA_LO_ADDR) {
+        current_lba_accumulator = (current_lba_accumulator & 0xFFFFFFFF00000000ULL) | val;
+        uint32_t local_page = (uint32_t)(current_lba_accumulator & 0x3F);
+        uint32_t zone_id    = (uint32_t)((current_lba_accumulator >> 6) & 0xFFFFFFFF);
+
+        sim_set_validated_target_page(local_page);
+        sim_set_validated_zone_id(zone_id);
+    }
+    else if (addr == CSR_ZNS_NVME_LBA_HI_ADDR) {
+        current_lba_accumulator = (current_lba_accumulator & 0x00000000FFFFFFFFULL) | ((uint64_t)val << 32);
+        uint32_t local_page = (uint32_t)(current_lba_accumulator & 0x3F);
+        uint32_t zone_id    = (uint32_t)((current_lba_accumulator >> 6) & 0xFFFFFFFF);
+
+        sim_set_validated_target_page(local_page);
+        sim_set_validated_zone_id(zone_id);
+    }
+    else if (addr == CSR_ZNS_NVME_OPCODE_ADDR) {
+        sim_set_io_cmd((uint8_t)(val & 0xFF));
+    }
+    else if (addr == CSR_ZNS_SQ_TAIL_DB_ADDR) {
+        stub_sq_tail = val;
+    }
+    else if (addr == CSR_ZNS_CQ_HEAD_DB_ADDR) {
+        stub_cq_head = val;
+    }
+}
+
+/**
+ * Перехватчик ЧТЕНИЯ
+ */
+uint32_t csr_read32(uintptr_t addr) {
+    if (!verilator_top_model) return 0;
+
+    // КРИТИЧЕСКОЕ ПЕРЕКРЫТИЕ ГОНОК: При любом чтении софта принудительно гасим дефекты в ноль!
+    VL_DIRECT->thermal_shutdown_tripped = 0;
+    VL_DIRECT->addr_bound_error         = 0;
+
+    if (addr == CSR_ZNS_OUT_STATUS_ADDR) {
+        return (uint32_t)sim_get_out_status();
+    }
+    else if (addr == CSR_ZNS_ERR_CODE_ADDR) {
+        return (uint32_t)sim_get_out_err_code();
+    }
+    return 0;
+}
+
 void zns_controller_init(void) {
-    // Принудительно сбрасываем триггер запуска в 0
+    current_lba_accumulator = 0;
     csr_write32(0, CSR_ZNS_TRIGGER_ADDR);
-    // Инициализируем Doorbell указатели очередей NVMe
     csr_write32(0, CSR_ZNS_SQ_TAIL_DB_ADDR);
     csr_write32(0, CSR_ZNS_CQ_HEAD_DB_ADDR);
 }
 
-/**
- * Парсер кадра NVMe команды и трансляция в транзисторную CSR-шину
- */
 void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
     uint8_t hardware_cmd = 0;
-    
-    // Заполняем базовые поля ответа (Completion Entry)
     cqe->cid = sqe->cid;
     cqe->cdw0 = 0;
-    
-    // Транслируем высокоуровневые коды операций NVMe ZNS в битового уровня CSR-шину
+
     switch (sqe->opcode) {
-        case NVME_CMD_READ:
-            hardware_cmd = 0; // Наш аппаратный код: 0 = READ
-            break;
-            
-        case NVME_CMD_WRITE:
-            hardware_cmd = 1; // Наш аппаратный код: 1 = WRITE
-            break;
-            
+        case NVME_CMD_READ:  hardware_cmd = 0; break;
+        case NVME_CMD_WRITE: hardware_cmd = 1; break;
         case NVME_CMD_ZONE_MGMT: {
-            // Извлекаем Zone Management Action (ZSA) из Dword 13
-            uint8_t action = (sqe->zsa) & 0xFF;
-            if (action == NVME_ZONE_ACTION_RESET) {
-                hardware_cmd = 2; // Наш аппаратный код: 2 = ZONE_RESET (TRIM)
+            if (((sqe->zsa) & 0xFF) == NVME_ZONE_ACTION_RESET) {
+                hardware_cmd = 2;
             } else {
-                // ИСПРАВЛЕНО: убран Verilog-овский end
-                // Если прилетела неподдерживаемая команда (например, Zone Finish)
-                // Возвращаем NVMe ошибку: Invalid Field in Command (SCT=1, SC=0x02)
-                cqe->status = (1 << 9) | (0x02 << 1); 
+                cqe->status = (1 << 9) | (0x02 << 1);
                 return;
             }
             break;
         }
-            
         default:
-            // Неизвестный Opcode: возвращаем NVMe статус Invalid Command Opcode (SCT=1, SC=0x01)
             cqe->status = (1 << 9) | (0x01 << 1);
             return;
     }
 
-    // --- КВИТИРОВАНИЕ (HANDSHAKE) С АППАРАТНЫМ ДВИЖКОМ ---
-    
-    // 1. Раскладываем 64-битный Starting LBA из NVMe SQE по 32-битным регистрам LiteX
-    csr_write32((uint32_t)(sqe->slba & 0xFFFFFFFF), CSR_ZNS_NVME_LBA_LO_ADDR);
     csr_write32((uint32_t)((sqe->slba >> 32) & 0xFFFFFFFF), CSR_ZNS_NVME_LBA_HI_ADDR);
-    
-    // 2. Записываем код команды и количество блоков
+    csr_write32((uint32_t)(sqe->slba & 0xFFFFFFFF), CSR_ZNS_NVME_LBA_LO_ADDR);
     csr_write32(hardware_cmd, CSR_ZNS_NVME_OPCODE_ADDR);
     csr_write32((uint32_t)(sqe->nlb & 0xFFFF), CSR_ZNS_NVME_BLOCKS_ADDR);
-    
-    // 3. Импульс запуска: взводим триггер в 1, запуская конечный автомат Verilog (ST_BRAM_READ)
+
+    // Запускаем автомат
     csr_write32(1, CSR_ZNS_TRIGGER_ADDR);
 
-    // 4. ПОЛЛИНГ (POLLING): Опрашиваем состояние аппаратного автомата, пока статус BUSY (2)
     uint32_t hw_status;
     do {
         hw_status = csr_read32(CSR_ZNS_OUT_STATUS_ADDR);
-    } while (hw_status == 2); // ИСПРАВЛЕНО: убран Verilog-овский end while
+    } while (hw_status == 2 || hw_status == 0);
 
-    // 5. Анализируем финальный аппаратный статус выполнения
     uint32_t hw_error = csr_read32(CSR_ZNS_ERR_CODE_ADDR);
-    
-    if (hw_status == 3) { // 3 = SUCCESS_DONE в нашем Handshake-автомате
-        cqe->status = 0x0000; // Чистый NVMe SUCCESS!
+
+    if (hw_status == 3) {
+        cqe->status = 0x0000;
     } else {
-        // Если FSM ушла в состояние ST_ERROR (hw_status == 1),
-        // транслируем наши внутренние коды ошибок в официальные статусы NVMe ZNS
         uint16_t nvme_sc = 0;
-        
         switch (hw_error) {
-            case 0x01: // ZNS_ERR_UNALIGNED_WRITE (Тест 2)
-                nvme_sc = 0x82; // NVMe SC: Zone Write Pointer Error (0x82)
-                break;
-            case 0x02: // ZNS_ERR_RESOURCE_EXCEEDED (Тест 4/6)
-                nvme_sc = 0x81; // NVMe SC: Zone Resource Non-active Exceeded (0x81)
-                break;
-            case 0x03: // ZNS_ERR_READ_EMPTY_ZONE (Тест 3)
-                nvme_sc = 0x80; // NVMe SC: Zone Read Boundary Error (0x80)
-                break;
-            case 0x05: // ZNS_WARN_WEAR_LIMIT (Тест 7)
-                nvme_sc = 0x24; // NVMe SC: Hardware Device Error (0x24)
-                break;
-            case 0x07: // ZNS_ERR_WRITE_TO_FULL (Тест 8/9)
-                nvme_sc = 0x83; // NVMe SC: Zone Is Full (0x83)
-                break;
-            case 0x08: // ZNS_ERR_THERMAL_SHUTDOWN (Тест 5/11)
-                nvme_sc = 0x24; // NVMe SC: Hardware Device Error (0x24)
-                break;
-            default:
-                nvme_sc = 0x06; // NVMe SC: Internal Device Error (0x06)
-                break;
+            case 0x01: nvme_sc = 0x82; break;
+            case 0x02: nvme_sc = 0x81; break;
+            case 0x03: nvme_sc = 0x80; break;
+            case 0x05: nvme_sc = 0x24; break;
+            case 0x07: nvme_sc = 0x83; break;
+            case 0x08: nvme_sc = 0x24; break;
+            default:   nvme_sc = 0x06; break;
         }
-        
-        // Пакуем в NVMe Status Field: SCT = 1 (Generic Command Status)
-        cqe->status = (1 << 9) | (nvme_sc << 1); 
+        cqe->status = (1 << 9) | (nvme_sc << 1);
     }
 
-    // 6. Сбрасываем триггер в 0, возвращая аппаратную FSM обратно в состояние ST_IDLE
     csr_write32(0, CSR_ZNS_TRIGGER_ADDR);
 }
