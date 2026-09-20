@@ -1,4 +1,3 @@
-// /home/ilya/TestFlashSim/OriginalFlashSim/tb_zns_controller.v
 `timescale 1ns / 1ps
 
 module tb_zns_controller();
@@ -29,6 +28,15 @@ module tb_zns_controller();
     reg          crypto_valid_in;
     wire [127:0] crypto_data_out;
     wire         crypto_valid_out;
+
+    // Сигналы для Теста SPI EEPROM (Тест 10 в C++)
+    reg         plp_trigger;
+    reg  [31:0] smart_data;
+    wire        eeprom_busy;
+    wire        eeprom_done;
+    wire        spi_sck;
+    wire        spi_mosi;
+    wire        spi_cs_n;
 
     // 1. Инстанцируем резолвер адресов
     zns_address_resolver u_resolver (
@@ -93,9 +101,23 @@ module tb_zns_controller();
         .out_valid_out      (crypto_valid_out)
     );
 
-    // Генерация клока 100 МГц
+    // 6. Инстанцируем контроллер энергонезависимой памяти EEPROM
+    zns_eeprom_controller u_eeprom (
+        .clk             (clk),
+        .rst             (rst),
+        .io_plp_trigger  (plp_trigger),
+        .io_smart_data   (smart_data),
+        .out_eeprom_busy (eeprom_busy),
+        .out_eeprom_done (eeprom_done),
+        .spi_sck         (spi_sck),
+        .spi_mosi        (spi_mosi),
+        .spi_cs_n        (spi_cs_n)
+    );
+
+    // Генерация тактового сигнала 100 МГц
     always #5 clk = ~clk;
 
+    // ОСНОВНОЙ ПРОЦЕДУРНЫЙ БЛОК ВЕРИФИКАЦИИ
     initial begin
         clk = 0;
         rst = 1;
@@ -107,6 +129,8 @@ module tb_zns_controller();
         crypto_clear = 0;
         crypto_data_in = 0;
         crypto_valid_in = 0;
+        plp_trigger = 0;
+        smart_data = 32'd0;
 
         #40;
         rst = 0;
@@ -221,23 +245,42 @@ module tb_zns_controller();
         end
         trigger = 0; #60;
 
-        if (test_failed) begin
-            $display("\n❌ [RTL CRITICAL ERROR]: Обнаружен провал тестов внутри верификационной сюиты!");
-        end
+        // --- СЦЕНАРИЙ 9: Экстренный SPI-сброс SMART телеметрии при аварии PLP ---
+        $display("[RTL ТЕСТ 9]: Обнаружено падение напряжения питания! Активация линии PLP...");
+        plp_trigger = 1;
+        smart_data = 32'h01_2A_0004; // 1 ошибка, 42 градуса, износ 4
+        #20;
 
-        $display("=== RTL ТЕСТБЕНЧ УСПЕШНО ЗАВЕРШЕН ===");
-        $finish;
-    end
+        if (eeprom_busy == 1'b1 && spi_cs_n == 1'b0) begin
+            $display("  -> Аппаратный затвор SPI сработал. Линия CS_N прижата к земле.");
+        end else begin
+            $display("  -> ОШИБКА: SPI контроллер проигнорировал прерывание PLP!");
+test_failed = 1;
+end
+#3500; // Ждем передачи 32 бит данных по SPI
+if (eeprom_done == 1'b1)
+begin
+$display("  -> РЕЗУЛЬТАТ: SMART-телеметрия успешно сериализована в EEPROM. Данные спасены!");
+end else begin
+$display("  -> ОШИБКА: Контроллер завис во время передачи дампа!");
+test_failed = 1;
+end
+plp_trigger = 0;
+#100;
 
-    // ОПЦИОНАЛЬНЫЙ ОТЛАДОЧНЫЙ МОНИТОР ПРИ НЕОБХОДИМОСТИ
-    initial begin
-        forever begin
-            #5;
-            if (cmd == 8'd2) begin
-                $display("   [LOG]: %t ps | State: %d | WE: %b | Addr: %d | RDATA: 32'h%H | Trig: %b | CMD: %d",
-                         $time, u_validator.current_state, bram_we, bram_addr, real_bram_rdata, trigger, cmd);
-            end
-        end
-    end
-
+if (test_failed) begin
+$display("\n❌ [RTL CRITICAL ERROR]: Обнаружен провал тестов внутри верификационной сюиты!");
+end
+$display("=== RTL ТЕСТБЕНЧ УСПЕШНО ЗАВЕРШЕН ===");
+$finish;
+end
+// ИЗОЛИРОВАННЫЙ ОТЛАДОЧНЫЙ МОНИТОР ВЕРХНЕГО УРОВНЯ
+initial begin
+forever begin
+#5;
+if (cmd == 8'd2) begin
+$display("   [LOG]: %t ps | State: %d | WE: %b | Addr: %d | RDATA: 32'h%H | Trig: %b | CMD: %d", $time, u_validator.current_state, bram_we, bram_addr, real_bram_rdata, trigger, cmd);
+end
+end
+end
 endmodule

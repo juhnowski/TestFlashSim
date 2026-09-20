@@ -96,6 +96,7 @@ class ZnsController(Module, AutoCSR):
         platform.add_source("zns_metadata_bram.v")
         platform.add_source("zns_thermal_manager.v")
         platform.add_source("zns_address_resolver.v")
+        platform.add_source("zns_eeprom_controller.v")
         platform.add_source("zns_fsm_validator.v")
         platform.add_source("zns_rules_checker.v")
         platform.add_source("zns_resources_tracker.v")
