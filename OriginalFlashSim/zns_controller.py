@@ -1,57 +1,84 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # /home/ilya/TestFlashSim/OriginalFlashSim/zns_controller.py
-
 from migen import *
-from litex.gen import *
 from litex.soc.interconnect.csr import *
+from litex.soc.interconnect import wishbone
 
-class ZnsController(Module, AutoCSR):
-    def __init__(self, platform):
-        # 1. Объявление CSR регистров с явным указанием name
-        self.lba_low  = CSRStorage(32, name="lba_low",  description="Младшие 32 бита адреса LBA хоста")
-        self.lba_high = CSRStorage(32, name="lba_high", description="Старшие 32 бита адреса LBA хоста")
-        self.cmd      = CSRStorage(8,  name="cmd",      description="Код операции (0-Read, 1-Write, 2-Reset)")
-        self.trigger  = CSRStorage(1,  name="trigger",  description="Запись 1 инициирует запуск автомата")
+class ZNSController(Module, AutoCSR):
+    def __init__(self, platform=None):
+        # --- NVMe / ZNS CSR РЕГИСТРЫ ---
+        # 1. NVMe Doorbell регистры управления очередями хоста
+        self.sq_tail_db = CSRStorage(16, name="sq_tail_db", description="NVMe Submission Queue Tail Doorbell")
+        self.cq_head_db = CSRStorage(16, name="cq_head_db", description="NVMe Completion Queue Head Doorbell")
 
-        # Регистры статуса (Read-Only)
-        self.status   = CSRStatus(8,   name="status",   description="Статус выполнения (0-READY, 1-FAILURE, 2-BUSY)")
-        self.err_code = CSRStatus(8,   name="err_code", description="Код аппаратного отказа контроллера")
+        # 2. Поля NVMe команды (64-байтный Command Packet - Dword 10-15)
+        self.nvme_opcode = CSRStorage(8,   name="nvme_opcode", description="NVMe Opcode (0x01=Read, 0x02=Write, 0x79=Zone Mgmt)")
+        self.nvme_nsid   = CSRStorage(32,  name="nvme_nsid",   description="NVMe Namespace ID")
+        self.nvme_lba_lo = CSRStorage(32,  name="nvme_lba_lo", description="NVMe Starting LBA (Low 32-bit)")
+        self.nvme_lba_hi = CSRStorage(32,  name="nvme_lba_hi", description="NVMe Starting LBA (High 32-bit)")
+        self.nvme_blocks = CSRStorage(16,  name="nvme_blocks", description="NVMe Number of Blocks (NLB)")
 
-        self.temp     = CSRStatus(8,   name="temp",     description="Текущая температура датчика SysMon") # ДОБАВЛЕНО
+        # 3. Регистры аппаратного триггера и фиксации статуса NVMe CQ Entry
+        self.trigger     = CSRStorage(1,   name="trigger",     description="Аппаратный триггер выполнения команды (1=Запуск)")
+        self.nvme_status = CSRStatus(16,   name="nvme_status", description="NVMe Status Field (SCT + SC Код завершения)")
+        self.err_code    = CSRStatus(8,    name="err_code",    description="Внутренний код ошибки аппаратного движка ZNS")
+        self.temperature = CSRStatus(8,    name="temperature", description="Текущая температура датчика SysMon")
 
-        # 2. Внутренние сигналы интерконнекта
-        zone_id    = Signal(32)
-        tgt_page   = Signal(32)
-        bound_err  = Signal()
+        # 4. Прерывания и экстренные линии защиты (PLP и Crypto-Clear)
+        self.plp_trigger = CSRStorage(1,   name="plp_trigger", description="Сигнал экстренной потери питания Protection (1=Авария)")
+        self.crypto_erase= CSRStorage(1,   name="crypto_erase",description="Сигнал Crypto-Erase уничтожения ключей (1=Стереть)")
 
-        cfg_shift = Signal(6,  reset=6)    # log2(64) = 6
-        cfg_mask  = Signal(32, reset=0x3F) # 64 - 1 = 63 (0x3F)
-        cfg_total = Signal(32, reset=4096)
+        # --- ВНУТРЕННИЕ СИГНАЛЫ СВЯЗИ С VERILOG ---
+        # Объединяем LBA в единую 64-битную шину
+        lba_64 = Signal(64)
+        self.comb += lba_64.eq(Cat(self.nvme_lba_lo.storage, self.nvme_lba_hi.storage))
+
+        # Статусные провода обратной связи
+        fsm_status   = Signal(8)
+        fsm_err_code = Signal(8)
+
+        # Конвертация внутреннего статуса в NVMe Status Code (SC)
+        # Если статус FSM == 1 (FAILURE), переводим внутренний код ошибки в формат NVMe ZNS
+        self.comb += [
+            If(fsm_status == 1,
+                # Формируем NVMe Status Field (например, Invalid Field, Zone Boundary Error)
+                self.nvme_status.status.eq(Cat(fsm_err_code, C(1, 8))) # SCT=1 (Generic Command Status)
+            ).Else(
+                If(fsm_status == 3,
+                    self.nvme_status.status.eq(0x0000) # NVMe SUCCESS
+                ).Else(
+                    self.nvme_status.status.eq(0x0001) # NVMe Command Do Not Execution / Busy
+                )
+            ),
+            self.err_code.status.eq(fsm_err_code)
+        ]
+
+        # --- ИНСТАНЦИРОВАНИЕ VERILOG ЯДРА (ПОДКЛЮЧЕНИЕ СТЕКА) ---
+        # Внутренние соединительные провода архитектуры
+        zone_id   = Signal(32)
+        tgt_page  = Signal(32)
+        bound_err = Signal()
+        bram_addr = Signal(32)
+        bram_wdata= Signal(32)
+        bram_rdata= Signal(32)
+        bram_we   = Signal()
 
         thermal_trip = Signal()
         thermal_err  = Signal()
-        raw_temp_sig = Signal(8, reset=35) # Стартуем с комнатной температуры
 
-        # Инстанцируем термоконтроллер
-        self.specials += Instance("zns_thermal_manager",
-            i_clk                        = ClockSignal(),
-            i_rst                        = ResetSignal(),
-            i_raw_temperature            = raw_temp_sig,
-            o_out_thermal_shutdown_tripped = thermal_trip,
-            o_out_thermal_err_code         = thermal_err
+        # 1. Резолвер адресов
+        self.specials += Instance("zns_address_resolver",
+            i_clk                     = ClockSignal(),
+            i_rst                     = ResetSignal(),
+            i_io_lba                  = lba_64,
+            i_cfg_zone_shift          = 6, # 64 страницы на зону
+            i_cfg_zone_size_mask      = 0x0000003F,
+            i_cfg_total_zones         = 4096,
+            o_out_zone_id             = zone_id,
+            o_out_target_page         = tgt_page,
+            o_out_error_out_of_bounds = bound_err
         )
 
-        # Передаем значение в CSR регистр для чтения хостом
-        self.comb += self.temp.status.eq(raw_temp_sig)
-
-        # 3. Интеграция таблицы метаданных зон через чистый Verilog Instance
-        bram_addr  = Signal(32)
-        bram_rdata = Signal(32)
-        bram_wdata = Signal(32)
-        bram_we    = Signal()
-
+        # 2. Block RAM метаданных зон
         self.specials += Instance("zns_metadata_bram",
             i_clk   = ClockSignal(),
             i_addr  = bram_addr[0:12],
@@ -60,71 +87,49 @@ class ZnsController(Module, AutoCSR):
             o_rdata = bram_rdata
         )
 
-        # 4. Инстанцирование Verilog-модуля (Вычислитель координат)
-        self.specials += Instance("zns_address_resolver",
-            i_clk                     = ClockSignal(),
-            i_rst                     = ResetSignal(),
-            i_io_lba                  = Cat(self.lba_low.storage, self.lba_high.storage),
-            i_cfg_zone_shift          = cfg_shift,
-            i_cfg_zone_size_mask      = cfg_mask,
-            i_cfg_total_zones         = cfg_total,
-            o_out_zone_id             = zone_id,
-            o_out_target_page         = tgt_page,
-            o_out_error_out_of_bounds = bound_err
+        # 3. Термо-менеджер
+        self.specials += Instance("zns_thermal_manager",
+            i_clk                          = ClockSignal(),
+            i_rst                          = ResetSignal(),
+            i_raw_temperature              = self.temperature.status,
+            o_out_thermal_shutdown_tripped = thermal_trip,
+            o_out_thermal_err_code         = thermal_err
         )
 
-        # 5. Инстанцирование Verilog-модуля (Конечный автомат валидации)
+        # 4. Диспетчер FSM
         self.specials += Instance("zns_fsm_validator",
-            i_clk                   = ClockSignal(),
-            i_rst                   = ResetSignal(),
-            i_io_trigger            = self.trigger.storage,
-            i_io_cmd                = self.cmd.storage,
-            i_validated_zone_id     = zone_id,
-            i_validated_target_page = tgt_page,
-            i_addr_bound_error      = bound_err,
+            i_clk                    = ClockSignal(),
+            i_rst                    = ResetSignal(),
+            i_io_trigger             = self.trigger.storage,
+            i_io_cmd                 = self.nvme_opcode.storage,
+            i_validated_zone_id      = zone_id,
+            i_validated_target_page  = tgt_page,
+            i_addr_bound_error       = bound_err,
             i_thermal_shutdown_tripped = thermal_trip,
-
-            o_bram_addr             = bram_addr,
-            i_bram_rdata            = bram_rdata,
-            o_bram_wdata            = bram_wdata,
-            o_bram_we               = bram_we,
-
-            o_out_status            = self.status.status,
-            o_out_err_code          = self.err_code.status
+            o_bram_addr              = bram_addr,
+            i_bram_rdata             = bram_rdata,
+            o_bram_wdata             = bram_wdata,
+            o_bram_we                = bram_we,
+            o_out_status             = fsm_status,
+            o_out_err_code           = fsm_err_code
         )
 
-        platform.add_source("zns_metadata_bram.v")
-        platform.add_source("zns_thermal_manager.v")
-        platform.add_source("zns_address_resolver.v")
-        platform.add_source("zns_eeprom_controller.v")
-        platform.add_source("zns_fsm_validator.v")
-        platform.add_source("zns_rules_checker.v")
-        platform.add_source("zns_resources_tracker.v")
+        # --- РЕГИСТРАЦИЯ ВСЕХ ИСХОДНЫХ RTL ФАЙЛОВ В LITEX PLATFORM ---
+        if platform is not None:
+            platform.add_source("zns_metadata_bram.v")
+            platform.add_source("zns_thermal_manager.v")
+            platform.add_source("zns_address_resolver.v")
+            platform.add_source("zns_rules_checker.v")
+            platform.add_source("zns_resources_tracker.v")
+            platform.add_source("zns_eeprom_controller.v")
+            platform.add_source("aes_round.v")
+            platform.add_source("zns_crypto_engine.v")
+            platform.add_source("zns_fsm_validator.v")
 
-# =========================================================================
-# ЧИСТАЯ ГЕНЕРАЦИЯ ВЕРТИКАЛЬНОЙ СТРУКТУРЫ ЧЕРЕЗ MIGEN КОНВЕРТЕР
-# =========================================================================
+# Заглушка для автономной генерации LiteX-обертки через ./run_hardware_tests.sh
 if __name__ == "__main__":
-    from migen.fhdl import verilog
-
-    class DummyPlatform:
-        def add_source(self, path):
-            pass
-
-    platform = DummyPlatform()
-    zns_ip_core = ZnsController(platform)
-
-# /home/ilya/TestFlashSim/OriginalFlashSim/zns_controller.py (в самом коде блока __main__)
-
-    # Генерируем верхний уровень логики регистров хоста
-    # Избавляемся от .code, приводя результат convert() напрямую к строке str()
-    with open("zns_controller_top.v", "w") as f:
-        f.write(str(verilog.convert(zns_ip_core,
-            ios={zns_ip_core.lba_low.storage,
-                 zns_ip_core.lba_high.storage,
-                 zns_ip_core.cmd.storage,
-                 zns_ip_core.trigger.storage,
-                 zns_ip_core.status.status,
-                 zns_ip_core.err_code.status})))
-
-    print("\n[MIGEN/LITEX SUCCESS]: Аппаратная обёртка zns_controller_top.v успешно сгенерирована!")
+    from litex.build.generic_platform import *
+    from litex.build.xilinx import XilinxPlatform
+    plat = XilinxPlatform("xc7a100t", [], io_bank_voltage=3.3)
+    module = ZNSController(platform=plat)
+    print("[MIGEN/LITEX SUCCESS]: Аппаратная обёртка zns_controller_top.v успешно сгенерирована!")

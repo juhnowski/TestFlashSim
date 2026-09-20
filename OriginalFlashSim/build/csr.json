@@ -1,0 +1,74 @@
+{
+    "csr_bases": {
+        "zns": 0
+    },
+    "csr_registers": {
+        "zns_sq_tail_db": {
+            "addr": 0,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_cq_head_db": {
+            "addr": 4,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_opcode": {
+            "addr": 8,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_nsid": {
+            "addr": 12,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_lba_lo": {
+            "addr": 16,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_lba_hi": {
+            "addr": 20,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_blocks": {
+            "addr": 24,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_trigger": {
+            "addr": 28,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_nvme_status": {
+            "addr": 32,
+            "size": 1,
+            "type": "ro"
+        },
+        "zns_err_code": {
+            "addr": 36,
+            "size": 1,
+            "type": "ro"
+        },
+        "zns_temperature": {
+            "addr": 40,
+            "size": 1,
+            "type": "ro"
+        },
+        "zns_plp_trigger": {
+            "addr": 44,
+            "size": 1,
+            "type": "rw"
+        },
+        "zns_crypto_erase": {
+            "addr": 48,
+            "size": 1,
+            "type": "rw"
+        }
+    },
+    "constants": {},
+    "memories": {}
+}
