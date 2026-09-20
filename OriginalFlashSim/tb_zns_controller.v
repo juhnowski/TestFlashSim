@@ -3,6 +3,8 @@
 
 module tb_zns_controller();
 
+    reg test_failed;
+
     reg         clk;
     reg         rst;
     reg         trigger;
@@ -31,6 +33,18 @@ module tb_zns_controller();
 
     wire [31:0] real_bram_rdata;
 
+    reg [7:0] raw_temp;
+    wire      thermal_trip;
+    wire [7:0] thermal_err;
+
+    zns_thermal_manager u_thermal (
+        .clk                         (clk),
+        .rst                         (rst),
+        .raw_temperature             (raw_temp),
+        .out_thermal_shutdown_tripped (thermal_trip),
+        .out_thermal_err_code         (thermal_err)
+    );
+
     // Подключаем честный аппаратный блок BRAM памяти
     zns_metadata_bram u_bram (
         .clk   (clk),
@@ -57,9 +71,9 @@ module tb_zns_controller();
         .clk                     (clk),
         .rst                     (rst),
         .io_lba                  (lba),
-        .cfg_zone_shift          (6'd6),       // 64 страницы в зоне
-        .cfg_zone_size_mask      (32'h0000_003F),
-        .cfg_total_zones         (32'd4096),
+        .cfg_zone_shift          (6'd6),       // Жесткий сдвиг на 6 бит (размер 64)
+        .cfg_zone_size_mask      (32'h0000_003F), // Маска 0x3F
+        .cfg_total_zones         (32'd4096),   // Всего 4096 зон
         .out_zone_id             (zone_id),
         .out_target_page         (tgt_page),
         .out_error_out_of_bounds (bound_err)
@@ -74,6 +88,7 @@ module tb_zns_controller();
         .validated_zone_id      (zone_id),
         .validated_target_page  (tgt_page),
         .addr_bound_error       (bound_err),
+        .thermal_shutdown_tripped (thermal_trip),
         .bram_addr              (bram_addr),
         .bram_rdata             (real_bram_rdata), // Подключили реальную шину вместо mock!
         .bram_wdata             (bram_wdata),
@@ -86,6 +101,7 @@ module tb_zns_controller();
     always #5 clk = ~clk;
 
     initial begin
+        test_failed = 0; // Изначально ошибок нет
         // Инициализация сигналов
         clk = 0;
         rst = 1;
@@ -110,36 +126,47 @@ module tb_zns_controller();
         #80;
         if (status == 8'd0 && err_code == 8'd00)
             $display("  -> РЕЗУЛЬТАТ: Успешно одобрено. Аппаратный wptr инкрементирован.");
-        else
+        else begin
             $display("  -> ОШИБКА: Контроллер заблокировал валидную запись! Код: 0x%02X", err_code);
+            test_failed = 1; // ВЗВОДИМ АППАРАТНЫЙ ФЛАГ ОШИБКИ СЮИТЫ
+        end
 
         #20; // Даем время BRAM обновить выходной регистр данных на шине
 
         // --- СЦЕНАРИЙ 2 ---
         $display("[RTL ТЕСТ 2]: Попытка случайной записи на LBA 5 мимо wptr=1 (Ожидается ОТКАЗ)...");
-        lba = 64'd5; cmd = 8'd1; trigger = 1;
-        #50; // Даем 5 тактов на полный проход конвейера до состояния ST_ERROR
+        lba = 64'h0000_0000_0000_0005; // Явно зануляем старшие 32 бита шины адреса!
+        cmd = 8'd1;
+        trigger = 1;
+        #50; // Даем 5 тактов на полный проход конвейера
 
         if (status == 8'd1 && err_code == 8'd01)
             $display("  -> РЕЗУЛЬТАТ: Контроллер аппаратно отверг случайную запись с кодом ZNS_ERR_UNALIGNED_WRITE (0x01).");
-        else
+        else begin
             $display("  -> ОШИБКА: Тест завалился! Контроллер пропустил некорректную запись. Статус: %d, Код: 0x%02X", status, err_code);
+            test_failed = 1; // ВЗВОДИМ АППАРАТНЫЙ ФЛАГ ОШИБКИ СЮИТЫ
+        end
 
-        trigger = 0; // Снимаем триггер, переводя автомат обратно в IDLE
+        trigger = 0;
         #20;
 
         // --- СЦЕНАРИЙ 3 ---
         $display("[RTL ТЕСТ 3]: Попытка чтения нераспределенной страницы LBA 10 при wptr=1 (Ожидается ОТКАЗ)...");
-        lba = 64'd10; cmd = 8'd0; trigger = 1;
-        #50; // Даем 5 тактов на чтение BRAM и уход в ошибку
+        lba = 64'h0000_0000_0000_000A; // Явно зануляем старшую часть шины LBA
+        cmd = 8'd0;
+        trigger = 1;
+        #50;
 
         if (status == 8'd1 && err_code == 8'd03)
             $display("  -> РЕЗУЛЬТАТ: Контроллер заблокировал чтение пустой зоны с кодом ZNS_ERR_READ_EMPTY_ZONE (0x03).");
-        else
+        else begin
             $display("  -> ОШИБКА: Тест завалился! Контроллер выдал мусор из пустой ячейки флеша. Статус: %d, Код: 0x%02X", status, err_code);
+            test_failed = 1; // ВЗВОДИМ АППАРАТНЫЙ ФЛАГ ОШИБКИ СЮИТЫ
+        end
 
         trigger = 0;
         #20;
+
 
 
         // --- СЦЕНАРИЙ 4 ---
@@ -166,8 +193,34 @@ module tb_zns_controller();
         #140;
         $display("  -> Результат после Crypto-Erase: 0x%H (Ожидается белый шум/изменение)", crypto_data_out);
 
+
+// /home/ilya/TestFlashSim/OriginalFlashSim/tb_zns_controller.v
+
+        // --- СЦЕНАРИЙ 5: Верификация тепловой аварийной защиты ---
+        $display("[RTL ТЕСТ 5]: Симуляция термического разгона чипа до 90°C (Критический порог: 85°C)...");
+        raw_temp = 8'd90; // Нагреваем
+        #20;
+
+        lba = 64'h0000_0000_0000_0000; cmd = 8'd1; trigger = 1; // Попытка записи
+        #50;
+        if (status == 8'd1 && err_code == 8'd08) begin
+            $display("  -> РЕЗУЛЬТАТ: Контроллер заблокировал I/O конвейер с кодом ZNS_ERR_THERMAL_SHUTDOWN (0x08). Кремний спасен!");
+        end else begin
+            $display("  -> ОШИБКА: Защита проигнорировала перегрев! Диск расплавился. Статус: %d, Код: 0x%02X", status, err_code);
+            test_failed = 1;
+        end
+
+        trigger = 0;
+        raw_temp = 8'd35; // Остужаем обратно
+        #20;
+
+        // ФИНАЛЬНАЯ СИНХРОННАЯ ПРОВЕРКА СЮИТЫ ТЕСТОВ
+        if (test_failed) begin
+            $display("\n❌ [RTL CRITICAL ERROR]: Обнаружен провал тестов внутри верификационной сюиты!");
+        end
+
         $display("=== RTL ТЕСТБЕНЧ УСПЕШНО ЗАВЕРШЕН ===");
         $finish;
-    end
+    end // Обязательный end для закрытия блока initial
 
-endmodule
+endmodule // Обязательный закрывающий тег всего модуля

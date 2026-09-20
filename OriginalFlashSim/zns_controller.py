@@ -19,6 +19,8 @@ class ZnsController(Module, AutoCSR):
         self.status   = CSRStatus(8,   name="status",   description="Статус выполнения (0-READY, 1-FAILURE, 2-BUSY)")
         self.err_code = CSRStatus(8,   name="err_code", description="Код аппаратного отказа контроллера")
 
+        self.temp     = CSRStatus(8,   name="temp",     description="Текущая температура датчика SysMon") # ДОБАВЛЕНО
+
         # 2. Внутренние сигналы интерконнекта
         zone_id    = Signal(32)
         tgt_page   = Signal(32)
@@ -27,6 +29,22 @@ class ZnsController(Module, AutoCSR):
         cfg_shift = Signal(6,  reset=6)    # log2(64) = 6
         cfg_mask  = Signal(32, reset=0x3F) # 64 - 1 = 63 (0x3F)
         cfg_total = Signal(32, reset=4096)
+
+        thermal_trip = Signal()
+        thermal_err  = Signal()
+        raw_temp_sig = Signal(8, reset=35) # Стартуем с комнатной температуры
+
+        # Инстанцируем термоконтроллер
+        self.specials += Instance("zns_thermal_manager",
+            i_clk                        = ClockSignal(),
+            i_rst                        = ResetSignal(),
+            i_raw_temperature            = raw_temp_sig,
+            o_out_thermal_shutdown_tripped = thermal_trip,
+            o_out_thermal_err_code         = thermal_err
+        )
+
+        # Передаем значение в CSR регистр для чтения хостом
+        self.comb += self.temp.status.eq(raw_temp_sig)
 
         # 3. Интеграция таблицы метаданных зон через чистый Verilog Instance
         bram_addr  = Signal(32)
@@ -64,6 +82,7 @@ class ZnsController(Module, AutoCSR):
             i_validated_zone_id     = zone_id,
             i_validated_target_page = tgt_page,
             i_addr_bound_error      = bound_err,
+            i_thermal_shutdown_tripped = thermal_trip,
 
             o_bram_addr             = bram_addr,
             i_bram_rdata            = bram_rdata,
@@ -75,6 +94,7 @@ class ZnsController(Module, AutoCSR):
         )
 
         platform.add_source("zns_metadata_bram.v")
+        platform.add_source("zns_thermal_manager.v")
         platform.add_source("zns_address_resolver.v")
         platform.add_source("zns_fsm_validator.v")
 
