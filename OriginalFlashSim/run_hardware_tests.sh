@@ -19,8 +19,8 @@ else
 fi
 
 echo -e "\n${GREEN}=== 2. СВЯЗЫВАНИЕ И КОМПИЛЯЦИЯ RTL КОДА (ICARUS VERILOG) ===${NC}"
-# Компилируем аппаратную память, резолвер, валидатор и тестбенч
-iverilog -o zns_hardware_sim zns_thermal_manager.v aes_round.v zns_crypto_engine.v zns_metadata_bram.v zns_address_resolver.v zns_fsm_validator.v tb_zns_controller.v
+# Добавлены zns_rules_checker.v и zns_resources_tracker.v
+iverilog -o zns_hardware_sim zns_rules_checker.v zns_resources_tracker.v zns_thermal_manager.v aes_round.v zns_crypto_engine.v zns_metadata_bram.v zns_address_resolver.v zns_fsm_validator.v tb_zns_controller.v
 echo -e "${GREEN}[IVERILOG OK]: Все RTL-модели успешно скомпилированы.${NC}"
 
 echo -e "\n${GREEN}=== 3. ЗАПУСК АППАРАТНОЙ RTL СИМУЛЯЦИИ КОНТРОЛЛЕРА ===${NC}"
