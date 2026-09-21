@@ -3,9 +3,6 @@
 #include "generated/csr.h"
 #include <string.h>
 
-// Официальный Opcode для Zone Append по спецификации NVMe ZNS
-#define NVME_CMD_ZONE_APPEND 0x7D
-
 extern void sim_set_io_trigger(uint8_t val);
 extern void sim_set_io_cmd(uint8_t val);
 extern void sim_set_validated_target_page(uint32_t val);
@@ -69,9 +66,8 @@ void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
     cqe->cdw0 = 0;
 
     switch (sqe->opcode) {
-        case NVME_CMD_READ:        hardware_cmd = 0; break;
-        case NVME_CMD_WRITE:       hardware_cmd = 1; break;
-        case NVME_CMD_ZONE_APPEND: hardware_cmd = 3; break; // Передаем код 3 для аппаратного Zone Append
+        case NVME_CMD_READ:  hardware_cmd = 0; break;
+        case NVME_CMD_WRITE: hardware_cmd = 1; break;
         case NVME_CMD_ZONE_MGMT: {
             if (((sqe->zsa) & 0xFF) == NVME_ZONE_ACTION_RESET) {
                 hardware_cmd = 2;
@@ -103,11 +99,6 @@ void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
 
     if (hw_status == 3) {
         cqe->status = 0x0000;
-        if (sqe->opcode == NVME_CMD_ZONE_APPEND) {
-            // Стандарт NVMe ZNS требует вернуть точный LBA записи в cdw0!
-            // Базовый LBA начала зоны + смещение выделенной контроллером страницы
-            cqe->cdw0 = (uint32_t)(sqe->slba + hw_error);
-        }
     } else {
         uint16_t nvme_sc = 0;
         switch (hw_error) {

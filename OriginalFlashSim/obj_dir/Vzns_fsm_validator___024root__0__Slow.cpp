@@ -127,46 +127,35 @@ VL_ATTR_COLD bool Vzns_fsm_validator___024root___eval_phase__stl(Vzns_fsm_valida
                                                         ((IData)(vlSelfRef.io_trigger) 
                                                          | (0U 
                                                             != (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state))))));
-                    if ((3U == (IData)(vlSelfRef.io_cmd))) {
-                        vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd = 1U;
-                        vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
-                            = (0x0000007fU & vlSelfRef.bram_rdata);
-                    } else {
-                        vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd 
-                            = vlSelfRef.io_cmd;
-                        vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
-                            = vlSelfRef.validated_target_page;
-                    }
                     vlSelfRef.zns_fsm_validator__DOT__is_opening_new_zone 
-                        = (IData)(((0U == (0x000000ffU 
-                                           & vlSelfRef.bram_rdata)) 
-                                   & ((1U == (IData)(vlSelfRef.io_cmd)) 
-                                      | (3U == (IData)(vlSelfRef.io_cmd)))));
+                        = (IData)(((1U == (IData)(vlSelfRef.io_cmd)) 
+                                   & (0U == (0x000000ffU 
+                                             & vlSelfRef.bram_rdata))));
                     vlSelfRef.zns_fsm_validator__DOT__has_error 
                         = ((IData)(vlSelfRef.thermal_shutdown_tripped) 
-                           || ((0x63U == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
-                               || (((1U == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                           || ((0x63U == (IData)(vlSelfRef.io_cmd)) 
+                               || (((1U == (IData)(vlSelfRef.io_cmd)) 
                                     & (vlSelfRef.bram_rdata 
                                        >> 7U)) || (
                                                    ((1U 
-                                                     == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
-                                                    & (vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
+                                                     == (IData)(vlSelfRef.io_cmd)) 
+                                                    & (vlSelfRef.validated_target_page 
                                                        != 
                                                        (0x0000007fU 
                                                         & vlSelfRef.bram_rdata))) 
                                                    || ((((1U 
-                                                          == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                                                          == (IData)(vlSelfRef.io_cmd)) 
                                                          & (IData)(vlSelfRef.zns_fsm_validator__DOT__is_opening_new_zone)) 
                                                         & (4U 
                                                            <= (IData)(vlSelfRef.zns_fsm_validator__DOT__open_zones_count))) 
                                                        || (((0U 
-                                                             == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
-                                                            & (vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
+                                                             == (IData)(vlSelfRef.io_cmd)) 
+                                                            & (vlSelfRef.validated_target_page 
                                                                >= 
                                                                (0x0000007fU 
                                                                 & vlSelfRef.bram_rdata))) 
                                                            || (((2U 
-                                                                 == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                                                                 == (IData)(vlSelfRef.io_cmd)) 
                                                                 & (0x0aU 
                                                                    <= 
                                                                    (0x000000ffU 
@@ -175,36 +164,36 @@ VL_ATTR_COLD bool Vzns_fsm_validator___024root___eval_phase__stl(Vzns_fsm_valida
                                                                || (IData)(vlSelfRef.addr_bound_error))))))));
                     vlSelfRef.zns_fsm_validator__DOT__internal_error_code 
                         = ((IData)(vlSelfRef.thermal_shutdown_tripped)
-                            ? 8U : ((0x63U == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd))
-                                     ? 6U : (((1U == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                            ? 8U : ((0x63U == (IData)(vlSelfRef.io_cmd))
+                                     ? 6U : (((1U == (IData)(vlSelfRef.io_cmd)) 
                                               & (vlSelfRef.bram_rdata 
                                                  >> 7U))
                                               ? 7U : 
                                              (((1U 
-                                                == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
-                                               & (vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
+                                                == (IData)(vlSelfRef.io_cmd)) 
+                                               & (vlSelfRef.validated_target_page 
                                                   != 
                                                   (0x0000007fU 
                                                    & vlSelfRef.bram_rdata)))
                                                ? 1U
                                                : ((
                                                    ((1U 
-                                                     == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                                                     == (IData)(vlSelfRef.io_cmd)) 
                                                     & (IData)(vlSelfRef.zns_fsm_validator__DOT__is_opening_new_zone)) 
                                                    & (4U 
                                                       <= (IData)(vlSelfRef.zns_fsm_validator__DOT__open_zones_count)))
                                                    ? 2U
                                                    : 
                                                   (((0U 
-                                                     == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
-                                                    & (vlSelfRef.zns_fsm_validator__DOT__effective_target_page 
+                                                     == (IData)(vlSelfRef.io_cmd)) 
+                                                    & (vlSelfRef.validated_target_page 
                                                        >= 
                                                        (0x0000007fU 
                                                         & vlSelfRef.bram_rdata)))
                                                     ? 3U
                                                     : 
                                                    (((2U 
-                                                      == (IData)(vlSelfRef.zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd)) 
+                                                      == (IData)(vlSelfRef.io_cmd)) 
                                                      & (0x0aU 
                                                         <= 
                                                         (0x000000ffU 
@@ -307,8 +296,6 @@ VL_ATTR_COLD void Vzns_fsm_validator___024root___ctor_var_reset(Vzns_fsm_validat
     vlSelf->zns_fsm_validator__DOT__has_error = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 15961367106081493593ull);
     vlSelf->zns_fsm_validator__DOT__internal_error_code = VL_SCOPED_RAND_RESET_I(8, __VscopeHash, 13643812718829098627ull);
     vlSelf->zns_fsm_validator__DOT__is_opening_new_zone = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 948012770907508813ull);
-    vlSelf->zns_fsm_validator__DOT__effective_target_page = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 10582874709699976603ull);
-    vlSelf->zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd = 0;
     vlSelf->__Vdly__zns_fsm_validator__DOT__current_state = 0;
     for (int __Vi0 = 0; __Vi0 < 1; ++__Vi0) {
         vlSelf->__VstlTriggered[__Vi0] = 0;

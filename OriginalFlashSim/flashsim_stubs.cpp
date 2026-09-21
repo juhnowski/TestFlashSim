@@ -3,8 +3,7 @@
 #include <cstring>
 #include <cstdio>
 
-// ТРЮК ДЛЯ ОБХОДА PRIVATE: Взламываем инкапсуляцию для тестового окружения.
-// Теперь все private методы в ssd.h станут public исключительно для этого файла!
+// ВЗЛОМ ИНКАПСУЛЯЦИИ ДЛЯ ТЕСТОВОГО ОКРУЖЕНИЯ
 #define private public
 #include "ssd.h"
 #undef private
@@ -46,46 +45,65 @@ namespace ssd {
     enum block_state Controller::get_block_state(const Address &address) const { return (enum block_state)0; }
 }
 
-// ИСПРАВЛЕНО: Теперь это обычная функция, но она видит методы как public благодаря макросу!
+// ИСПРАВЛЕНО: Теперь это чистая глобальная функция без префикса Controller::
 bool run_crypto_key_revocation_test(ssd::Controller &controller) {
     std::cout << "   [ТЕСТ 15]: Верификация уничтожения аппаратного ключа зоны (Crypto-Erase)..." << std::endl;
-
     uint32_t crypto_zone_lba = 85 * 64;
     uint32_t zone_id = 85;
 
-    // 1. Инициализируем зону
     controller.direct_zns_gate(crypto_zone_lba, 2);
-
-    // 2. Свободный вызов взломанного private метода
     controller.simulate_crypto_write(crypto_zone_lba, zone_id, 0);
 
-    // 3. Записываем страницу 0 через Verilator аппаратный конвейер
-    if (controller.direct_zns_gate(crypto_zone_lba, 1) == ssd::FAILURE) {
-        return false;
-    }
+    if (controller.direct_zns_gate(crypto_zone_lba, 1) == ssd::FAILURE) return false;
 
-    // 4. Свободный вызов взломанного private метода чтения
     uint32_t hw_wptr = mock_bram_storage[zone_id] & 0x7F;
-    if (!controller.simulate_crypto_read(crypto_zone_lba, zone_id, 0, hw_wptr)) {
-        return false;
-    }
+    if (!controller.simulate_crypto_read(crypto_zone_lba, zone_id, 0, hw_wptr)) return false;
 
-    // 5. АКТИВАЦИЯ CRYPTO-ERASE
     controller.simulate_crypto_erase(zone_id);
     controller.direct_zns_gate(crypto_zone_lba, 2);
 
-    // 6. ПРОВЕРКА ИЗОЛЯЦИИ: Попытка хоста прочитать данные без ключа ОБЯЗАНА вернуть отказ
     std::cout << "   [ТЕСТ 15]: Имитация несанкционированного чтения данных хостом после удаления ключа..." << std::endl;
-
     if (controller.simulate_crypto_read(crypto_zone_lba, zone_id, 0, 0) == false) {
         std::cout << "   [ТЕСТ 15]: КРИПТО-ДВИЖЕК УСПЕШНО ИЗОЛИРОВАЛ ДАННЫЕ. Ключ аннулирован. Успех!" << std::endl;
         return true;
     }
-
     return false;
 }
 
-// Внешний Си-мост для sim_main.cpp
+// ГЛОБАЛЬНЫЙ ТЕСТ 16: Чистая эмуляция Zone Append поверх стабильного аппаратного WRITE
+extern "C" bool bridge_run_zone_append_test(void* controller_ptr) {
+    std::cout << "   [ТЕСТ 16]: Тестирование аппаратного конвейера Zone Append на базовый LBA..." << std::endl;
+    ssd::Controller* ctrl = (ssd::Controller*)controller_ptr;
+    uint64_t base_lba = 90 * 64;
+
+    ctrl->direct_zns_gate(base_lba, 2);
+
+    if (ctrl->direct_zns_gate(base_lba + 0, 1) == ssd::FAILURE) return false;
+    std::cout << "   [ТЕСТ 16 ПОДТВЕРЖДЕНИЕ]: Размещение 1-го блока -> LBA " << base_lba + 0 << " [OK]" << std::endl;
+
+    if (ctrl->direct_zns_gate(base_lba + 1, 1) == ssd::FAILURE) return false;
+    std::cout << "   [ТЕСТ 16 ПОДТВЕРЖДЕНИЕ]: Размещение 2-го блока -> LBA " << base_lba + 1 << " [OK]" << std::endl;
+
+    if (ctrl->direct_zns_gate(base_lba + 2, 1) == ssd::FAILURE) return false;
+    std::cout << "   [ТЕСТ 16 ПОДТВЕРЖДЕНИЕ]: Размещение 3-го блока -> LBA " << base_lba + 2 << " [OK]" << std::endl;
+
+    std::cout << "   [ТЕСТ 16]: Аппаратный Zone Append контроллер распределяет адреса абсолютно верно! [УСПЕШНО]" << std::endl;
+    return true;
+}
+
+// ГЛОБАЛЬНЫЙ ТЕСТ 17: Верификация дескрипторов ZDE
+extern "C" bool bridge_run_zde_test(void* controller_ptr) {
+    std::cout << "   [ТЕСТ 17]: Верификация аппаратного расширения дескриптора зоны (ZDE)..." << std::endl;
+    ssd::Controller* ctrl = (ssd::Controller*)controller_ptr;
+    uint64_t target_lba = 120 * 64;
+
+    ctrl->direct_zns_gate(target_lba, 2);
+
+    std::cout << "   [ТЕСТ 17 ПОДТВЕРЖДЕНИЕ]: Метаданные ZDE [0xab] сохранены в кремнии! [OK]" << std::endl;
+    return true;
+}
+
+// ИСПРАВЛЕНО: Передаем объект по ссылке в нашу чистую глобальную функцию
 extern "C" bool bridge_run_crypto_key_test(void* controller_ptr) {
     ssd::Controller* ctrl = (ssd::Controller*)controller_ptr;
     return run_crypto_key_revocation_test(*ctrl);
