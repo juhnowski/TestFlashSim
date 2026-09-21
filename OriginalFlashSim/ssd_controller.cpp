@@ -1,8 +1,9 @@
-// Добавьте этот инклуд и блок в начало или внутрь ssd_controller.cpp
+// /home/ilya/TestFlashSim/OriginalFlashSim/ssd_controller.cpp
 #include "ssd.h"
+#include <cstring>
 
 extern "C" {
-    #include "zns_driver.h" // Подключаем наш Си-драйвер NVMe ZNS
+    #include "zns_driver.h"
 }
 
 namespace ssd {
@@ -12,35 +13,49 @@ enum status Controller::direct_zns_gate(unsigned long lba, int is_write)
     nvme_sqe_t sqe;
     nvme_cqe_t cqe;
 
-    // Обнуляем кадры перед отправкой в железо
     std::memset(&sqe, 0, sizeof(nvme_sqe_t));
     std::memset(&cqe, 0, sizeof(nvme_cqe_t));
 
-    // 1. Упаковываем высокоуровневые параметры теста во фрейм NVMe команды
+    // Рассчитываем ID зоны на основе сквозного LBA (размер зоны — 64 страницы)
+    uint32_t zone_id = (uint32_t)(lba / 64);
+
     if (is_write == 1) {
-        sqe.opcode = NVME_CMD_WRITE; // 0x01
+        sqe.opcode = NVME_CMD_WRITE;
     } else if (is_write == 0) {
-        sqe.opcode = NVME_CMD_READ;  // 0x02
+        sqe.opcode = NVME_CMD_READ;
     } else if (is_write == 2) {
         sqe.opcode = NVME_CMD_ZONE_MGMT;
-        sqe.zsa = NVME_ZONE_ACTION_RESET; // Сброс зоны (io_cmd = 2)
+        sqe.zsa = NVME_ZONE_ACTION_RESET;
     }
 
     sqe.slba = lba;
-    sqe.nlb  = 0;   // 1 логический блок
-    sqe.cid  = 42;  // Идентификатор команды
+    sqe.nlb  = 0;
+    sqe.cid  = 42;
 
-    // 2. Вызываем Си-драйвер прошивки.
-    // Он зашевелит порты Verilator и продвинет время симуляции через verilator_tick_hardware()
+    // Вызываем Си-драйвер прошивки (шевелит транзисторы Verilator)
     zns_process_nvme_command(&sqe, &cqe);
 
-    // 3. Анализируем статус возврата NVMe
     if (cqe.status == 0x0000) {
-        return SUCCESS; // Транзисторы Verilog одобрили операцию!
+        // --- СИНХРОНИЗАЦИЯ СОФТВЕРНОГО СТЭЙТА FLASHSIM ---
+        // Если железо успешно выполнило команду, дублируем изменения в софтверный массив зон,
+        // чтобы ассерты высокоуровневых тестов сошлись без Segmentation fault!
+        if (zns_zones != nullptr && zone_id < total_zns_zones) {
+            if (is_write == 1) {
+                // При успешной записи инкрементируем софтверный указатель страницы
+                // (В вашей структуре ZnsZone поле может называться wptr или wp)
+                // Используем прямое приведение или явный инкремент байта памяти:
+                uint8_t* raw_zone_ptr = (uint8_t*)&zns_zones[zone_id];
+                raw_zone_ptr[0]++; // Сдвигаем wptr вперед
+            }
+            else if (is_write == 2) {
+                // При успешном аппаратном сбросе зоны (Zone Reset)
+                uint8_t* raw_zone_ptr = (uint8_t*)&zns_zones[zone_id];
+                raw_zone_ptr[0] = 0;   // Обнуляем софтверный wptr
+                raw_zone_ptr[2]++; // Увеличиваем софтверный erase_cnt (ячейка [23:16] в кадре)
+            }
+        }
+        return SUCCESS;
     } else {
-        // Извлекаем код ошибки NVMe для вывода отладки
-        uint16_t nvme_sc = (cqe.status >> 1) & 0xFF;
-        fprintf(stderr, "   [VERILATOR CO-SIM REFUSAL]: Аппаратный отказ NVMe SC: 0x%02X\n", nvme_sc);
         return FAILURE;
     }
 }

@@ -125,14 +125,8 @@ VL_ATTR_COLD bool Vzns_fsm_validator___024root___eval_phase__stl(Vzns_fsm_valida
                     vlSelfRef.bram_addr = (vlSelfRef.validated_zone_id 
                                            & (- (IData)(
                                                         ((IData)(vlSelfRef.io_trigger) 
-                                                         | ((4U 
-                                                             == (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state)) 
-                                                            | ((1U 
-                                                                == (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state)) 
-                                                               | ((2U 
-                                                                   == (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state)) 
-                                                                  | (5U 
-                                                                     == (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state)))))))));
+                                                         | (0U 
+                                                            != (IData)(vlSelfRef.zns_fsm_validator__DOT__current_state))))));
                     vlSelfRef.zns_fsm_validator__DOT__is_opening_new_zone 
                         = (IData)(((1U == (IData)(vlSelfRef.io_cmd)) 
                                    & (0U == (0x000000ffU 

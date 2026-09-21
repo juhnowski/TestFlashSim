@@ -256,9 +256,20 @@ gcc -o zns_software_test main.c zns_driver.c -I. -Igenerated
 # Verilator Co-Simulation
 ```bash
 cd /home/ilya/TestFlashSim/OriginalFlashSim
-verilator -Wall --cc zns_fsm_validator.v --exe sim_main.cpp zns_driver.c -I.
+rm -rf obj_dir
+
+verilator -Wall --cc zns_fsm_validator.v \
+          --exe sim_main.cpp zns_driver.c \
+          ssd_ssd.cpp ssd_config.cpp ssd_controller.cpp thermal_manager.cpp \
+          crypto_engine.cpp eeprom_manager.cpp zns_manager.cpp ssd_address.cpp \
+          ssd_block.cpp ssd_bm.cpp ssd_bus.cpp ssd_channel.cpp ssd_die.cpp \
+          ssd_event.cpp ssd_gc.cpp ssd_package.cpp ssd_page.cpp ssd_plane.cpp \
+          ssd_raidssd.cpp ssd_ram.cpp ssd_stats.cpp ssd_wl.cpp ssd_ftlparent.cpp \
+          tests/test_*.cpp -I.
+
 cd obj_dir
 make -j -f Vzns_fsm_validator.mk Vzns_fsm_validator
-./Vzns_fsm_validator
+cd ..
+./obj_dir/Vzns_fsm_validator
 
 ```

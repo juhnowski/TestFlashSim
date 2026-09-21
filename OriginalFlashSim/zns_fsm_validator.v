@@ -89,9 +89,9 @@ module zns_fsm_validator (
         else     current_state <= next_state;
     end
 
-    // Handshake архитектура переходов + комбинаторный адрес BRAM
+    // ИСПРАВЛЕНО: удерживаем адрес стабильным во ВСЕХ рабочих состояниях (включая VALIDATE и ERROR)
     always @* begin
-        if (io_trigger || current_state == ST_BRAM_READ || current_state == ST_BRAM_WAIT || current_state == ST_UPDATE_BRAM || current_state == ST_EXECUTE) begin
+        if (current_state != ST_IDLE || io_trigger) begin
             bram_addr = validated_zone_id;
         end else begin
             bram_addr = 32'd0;

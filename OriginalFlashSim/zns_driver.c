@@ -3,39 +3,17 @@
 #include "generated/csr.h"
 #include <string.h>
 
-// Плоское Си-зеркало структуры модели для прямой принудительной записи портов
-struct Vzns_fsm_validator_direct_type {
-    uint8_t  clk;
-    uint8_t  rst;
-    uint8_t  io_trigger;
-    uint8_t  io_cmd;
-    uint32_t validated_zone_id;
-    uint32_t validated_target_page;
-    uint8_t  addr_bound_error;         // Линия ошибки адреса
-    uint8_t  thermal_shutdown_tripped; // Линия перегрева
-};
-
-#define VL_DIRECT ((struct Vzns_fsm_validator_direct_type *)verilator_top_model)
-
 extern void sim_set_io_trigger(uint8_t val);
 extern void sim_set_io_cmd(uint8_t val);
 extern void sim_set_validated_target_page(uint32_t val);
 extern void sim_set_validated_zone_id(uint32_t val);
 extern uint8_t sim_get_out_status(void);
 extern uint8_t sim_get_out_err_code(void);
+extern void verilator_tick_hardware(void);
 
 static uint64_t current_lba_accumulator = 0;
 
-/**
- * Перехватчик ЗАПИСИ
- */
 void csr_write32(uint32_t val, uintptr_t addr) {
-    if (!verilator_top_model) return;
-
-    // КРИТИЧЕСКОЕ ПЕРЕКРЫТИЕ ГОНОК: При любой записи софта принудительно гасим дефекты в ноль!
-    VL_DIRECT->thermal_shutdown_tripped = 0;
-    VL_DIRECT->addr_bound_error         = 0;
-
     if (addr == CSR_ZNS_TRIGGER_ADDR) {
         sim_set_io_trigger((uint8_t)(val & 0x1));
     }
@@ -43,7 +21,6 @@ void csr_write32(uint32_t val, uintptr_t addr) {
         current_lba_accumulator = (current_lba_accumulator & 0xFFFFFFFF00000000ULL) | val;
         uint32_t local_page = (uint32_t)(current_lba_accumulator & 0x3F);
         uint32_t zone_id    = (uint32_t)((current_lba_accumulator >> 6) & 0xFFFFFFFF);
-
         sim_set_validated_target_page(local_page);
         sim_set_validated_zone_id(zone_id);
     }
@@ -51,7 +28,6 @@ void csr_write32(uint32_t val, uintptr_t addr) {
         current_lba_accumulator = (current_lba_accumulator & 0x00000000FFFFFFFFULL) | ((uint64_t)val << 32);
         uint32_t local_page = (uint32_t)(current_lba_accumulator & 0x3F);
         uint32_t zone_id    = (uint32_t)((current_lba_accumulator >> 6) & 0xFFFFFFFF);
-
         sim_set_validated_target_page(local_page);
         sim_set_validated_zone_id(zone_id);
     }
@@ -66,16 +42,7 @@ void csr_write32(uint32_t val, uintptr_t addr) {
     }
 }
 
-/**
- * Перехватчик ЧТЕНИЯ
- */
 uint32_t csr_read32(uintptr_t addr) {
-    if (!verilator_top_model) return 0;
-
-    // КРИТИЧЕСКОЕ ПЕРЕКРЫТИЕ ГОНОК: При любом чтении софта принудительно гасим дефекты в ноль!
-    VL_DIRECT->thermal_shutdown_tripped = 0;
-    VL_DIRECT->addr_bound_error         = 0;
-
     if (addr == CSR_ZNS_OUT_STATUS_ADDR) {
         return (uint32_t)sim_get_out_status();
     }
@@ -87,9 +54,10 @@ uint32_t csr_read32(uintptr_t addr) {
 
 void zns_controller_init(void) {
     current_lba_accumulator = 0;
-    csr_write32(0, CSR_ZNS_TRIGGER_ADDR);
-    csr_write32(0, CSR_ZNS_SQ_TAIL_DB_ADDR);
-    csr_write32(0, CSR_ZNS_CQ_HEAD_DB_ADDR);
+    sim_set_io_trigger(0);
+    sim_set_io_cmd(0);
+    sim_set_validated_target_page(0);
+    sim_set_validated_zone_id(0);
 }
 
 void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
@@ -119,9 +87,10 @@ void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
     csr_write32(hardware_cmd, CSR_ZNS_NVME_OPCODE_ADDR);
     csr_write32((uint32_t)(sqe->nlb & 0xFFFF), CSR_ZNS_NVME_BLOCKS_ADDR);
 
-    // Запускаем автомат
+    // Запускаем конечный автомат
     csr_write32(1, CSR_ZNS_TRIGGER_ADDR);
 
+    // ПОЛЛИНГ ИСПОЛНЕНИЯ: Ждем завершения фазы BUSY
     uint32_t hw_status;
     do {
         hw_status = csr_read32(CSR_ZNS_OUT_STATUS_ADDR);
@@ -145,5 +114,13 @@ void zns_process_nvme_command(const nvme_sqe_t *sqe, nvme_cqe_t *cqe) {
         cqe->status = (1 << 9) | (nvme_sc << 1);
     }
 
+    // Сбрасываем триггер запуска автомата
     csr_write32(0, CSR_ZNS_TRIGGER_ADDR);
+
+    // ИСПРАВЛЕНО: Вместо потенциально залипающего цикла do-while,
+    // даём автомату ровно 2 полных синхронных такта симуляции,
+    // чтобы внутренний триггер current_state гарантированно вернулся в ST_IDLE!
+    // Это исключает фазовые сдвиги клока при параллельном сбросе зон!
+    verilator_tick_hardware();
+    verilator_tick_hardware();
 }
