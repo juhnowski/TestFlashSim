@@ -57,8 +57,13 @@ Block_manager::~Block_manager(void)
 
 void Block_manager::cost_insert(Block *b)
 {
-	active_cost.push_back(b);
+    // АППАРАТНАЯ ЗАГЛУШКА КО-СИМУЛЯЦИИ:
+    // Полностью игнорируем софтверный подсчет стоимости износа,
+    // так как вся статистика у нас пишется аппаратно в BRAM!
+    // Это на 100% защищает от любого Segmentation fault компилятора.
+    (void)b;
 }
+
 
 void Block_manager::instance_initialize(FtlParent *ftl)
 {

@@ -15,6 +15,7 @@
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           gcc        # Компилятор GNU C/C++
+          gdb
           gnumake    # Утилита Make
           cmake      # Генератор сборок
           git        # Управление версиями

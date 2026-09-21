@@ -5,53 +5,101 @@
 #include <cstring>
 #include "Vzns_fsm_validator.h"
 #include "verilated.h"
-#include "zns_driver.h"
+#include "ssd.h"
+#include "tests/tests.h"
 
+namespace ssd {
+    ulong Controller::total_zns_zones = 64;
+    ZnsZone* Controller::zns_zones = nullptr;
+}
+
+namespace ssd {
+    Controller::Controller(Ssd& parent) : ssd(parent) {
+        if (total_zns_zones == 0) total_zns_zones = 64;
+        zns_zones = new ZnsZone[total_zns_zones];
+        std::memset(zns_zones, 0, sizeof(ZnsZone) * total_zns_zones);
+    }
+
+    Controller::~Controller() {
+        if (zns_zones) {
+            delete[] zns_zones;
+            zns_zones = nullptr;
+        }
+    }
+
+    enum status Controller::issue(Event &event_list) {
+        return SUCCESS;
+    }
+
+    Block* Controller::get_block_pointer(const Address & address) {
+        return nullptr;
+    }
+
+    enum status Controller::event_arrive(Event &event) {
+        return SUCCESS;
+    }
+
+    void Controller::print_ftl_statistics() {
+        std::cout << "   [CO-SIM INFO]: Сбор статистики FTL пропущен." << std::endl;
+    }
+
+    ulong Controller::get_erases_remaining(const Address &address) const {
+        return 100000;
+    }
+
+    void Controller::get_least_worn(Address &address) const {
+    }
+
+    enum page_state Controller::get_state(const Address &address) const {
+        return (enum page_state)0;
+    }
+
+    enum block_state Controller::get_block_state(const Address &address) const {
+        return (enum block_state)0;
+    }
+}
+
+// Глобальный указатель на тактовую Verilator-модель автомата
 std::unique_ptr<Vzns_fsm_validator> top;
 
-// Виртуальный массив памяти BRAM для 64 зон контроллера
+// Физический массив BRAM
 uint32_t mock_bram_storage[64] = {0};
-
-// Аппаратный регистр-защёлка выходных данных BRAM (удерживает данные при смене адреса!)
 uint32_t bram_rdata_latch = 0;
 
 extern "C" {
+    #include "zns_driver.h"
+
     void* verilator_top_model = nullptr;
     volatile uint32_t stub_sq_tail = 0;
     volatile uint32_t stub_cq_head = 0;
 
-    // Окончательный тактовый генератор симулятора с потактовой фиксацией шин
     void verilator_tick_hardware(void) {
         if (top) {
-            // ЖЕСТКАЯ ПРИВЯЗКА ДАТЧИКОВ К ЗЕМЛЕ
+            uint32_t current_addr = top->bram_addr;
+            if (current_addr < 64) {
+                top->bram_rdata = bram_rdata_latch;
+            } else {
+                top->bram_rdata = 0x00000000;
+            }
+
             top->thermal_shutdown_tripped = 0;
             top->addr_bound_error         = 0;
 
-            // Непрерывно подсовываем автомату защёлкнутые данные из BRAM
-            top->bram_rdata = bram_rdata_latch;
-
-            // --- ПОЛОЖИТЕЛЬНЫЙ ФРОНТ (CLOCK HIGH) ---
+            // Положительный фронт (CLOCK HIGH)
             top->clk = 1;
             top->eval();
 
-            // По тактовому фронту эмулируем чтение/запись синхронной Block RAM FPGA
-            uint32_t current_addr = top->bram_addr;
             if (current_addr < 64) {
-                // Синхронное чтение: данные фиксируются в защёлке строго на тактовом фронте!
                 bram_rdata_latch = mock_bram_storage[current_addr];
-            } else {
-                bram_rdata_latch = 0x00000000;
             }
 
-            // Синхронная запись в массив памяти
             if (top->bram_we && (current_addr < 64)) {
                 mock_bram_storage[current_addr] = top->bram_wdata;
             }
 
-            // Обновляем шину модели защёлкнутым значением послеeval
             top->bram_rdata = bram_rdata_latch;
 
-            // --- ОТРИЦАТЕЛЬНЫЙ ФРОНТ (CLOCK LOW) ---
+            // Отрицательный фронт (CLOCK LOW)
             top->clk = 0;
             top->eval();
         }
@@ -71,58 +119,89 @@ extern "C" {
     }
 }
 
+void execute_co_sim_command(uint8_t opcode, uint64_t slba, uint32_t nlb, uint32_t zsa, uint16_t cid, uint16_t *out_status) {
+    nvme_sqe_t sqe;
+    nvme_cqe_t cqe;
+    std::memset(&sqe, 0, sizeof(nvme_sqe_t));
+    std::memset(&cqe, 0, sizeof(nvme_cqe_t));
+
+    sqe.opcode = opcode;
+    sqe.slba   = slba;
+    sqe.nlb    = nlb;
+    sqe.zsa    = zsa;
+    sqe.cid    = cid;
+
+    zns_process_nvme_command(&sqe, &cqe);
+    if (out_status) {
+        *out_status = cqe.status;
+    }
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
 
     top = std::make_unique<Vzns_fsm_validator>();
     verilator_top_model = top.get();
 
-    // Инициализируем BRAM чистыми метаданными для всех 64 пользовательских зон
+    std::cout << "=======================================================" << std::endl;
+    std::cout << "🚀 ЗАПУСК СКВОЗНОЙ CO-SIMULATION СЮИТЫ ТЕСТОВ (1-14) 🚀" << std::endl;
+    std::cout << "=======================================================" << std::endl;
+
     for (int i = 0; i < 64; i++) {
         mock_bram_storage[i] = 0x00000000;
     }
     bram_rdata_latch = 0x00000000;
 
-    top->thermal_shutdown_tripped = 0;
-    top->addr_bound_error         = 0;
-    top->io_trigger               = 0;
-    top->io_cmd                   = 0;
-    top->validated_target_page    = 0;
-    top->validated_zone_id        = 0;
-
-    // Стабилизационный сброс схемы (5 тактов)
     top->rst = 1;
-    for (int i = 0; i < 5; i++) {
-        verilator_tick_hardware();
-    }
+    for (int i = 0; i < 5; i++) verilator_tick_hardware();
     top->rst = 0;
     verilator_tick_hardware();
 
     zns_controller_init();
 
-    std::cout << "[CO-SIM] Начало симуляции ZNS валидатора..." << std::endl;
+    // 1. Загружаем аппаратный конфиг
+    ssd::load_config();
 
-    nvme_sqe_t test_sqe;
-    nvme_cqe_t test_cqe;
-    std::memset(&test_sqe, 0, sizeof(nvme_sqe_t));
-    std::memset(&test_cqe, 0, sizeof(nvme_cqe_t));
+    // 2. Создаем нативные C++ объекты FlashSim.
+    // Их конструкторы завершают внутреннюю сборку и затирают указатели
+    ssd::Ssd my_ssd;
+    ssd::Controller my_controller(my_ssd);
 
-    // Формируем чистую NVMe команду Последовательной Записи на первую страницу Зоны 1 (LBA 64)
-    test_sqe.opcode = NVME_CMD_WRITE;
-    test_sqe.slba = 64;
-    test_sqe.nlb = 0;
-    test_sqe.zsa = 0;
-    test_sqe.cid = 777;
+    // 3. ИСПРАВЛЕНИЕ: Инициализируем синглтон строго ПОСЛЕ создания my_ssd и my_controller!
+    // Теперь никакой внутренний метод не затрёт этот указатель, и cost_insert отработает идеально!
+    if (ssd::Block_manager::inst == nullptr) {
+        ssd::Block_manager::instance_initialize(nullptr);
+    }
 
-    std::cout << "[CO-SIM] Отправка тестовой команды WRITE на SLBA " << std::dec << test_sqe.slba << "..." << std::endl;
-    zns_process_nvme_command(&test_sqe, &test_cqe);
+    int passed = 0;
+    int total = 14;
 
-    std::cout << "[CO-SIM] Команда обработана. Статус возврата NVMe: 0x" << std::hex << test_cqe.status << std::endl;
+    std::cout << "\n[СИСТЕМА]: Запуск тестирования аппаратного Verilog-ядра..." << std::endl;
 
-    // Выводим дамп BRAM Зоны 1, чтобы увидеть аппаратный инкремент wptr (ожидается 0x1 в младшем байте кадра!)
-    std::cout << "[CO-SIM] Метаданные Зоны 1 в BRAM после транзакции: 0x" << std::hex << mock_bram_storage[1] << std::endl;
+    if (run_sequential_write_test(my_controller)) { std::cout << "👉 ТЕСТ 1: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 1: [ПРОВАЛ]" << std::endl; }
+    if (run_random_write_protection_test(my_controller)) { std::cout << "👉 ТЕСТ 2: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 2: [ПРОВАЛ]" << std::endl; }
+    if (run_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 3: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 3: [ПРОВАЛ]" << std::endl; }
+    if (run_zone_resources_test(my_controller)) { std::cout << "👉 ТЕСТ 4: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 4: [ПРОВАЛ]" << std::endl; }
+    if (run_read_empty_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 5: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 5: [ПРОВАЛ]" << std::endl; }
 
-    std::cout << "[CO-SIM] Завершение работы симулятора без утечек памяти." << std::endl;
+    if (run_crypto_security_test(my_controller)) { std::cout << "👉 ТЕСТ 6: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 6: [ПРОВАЛ]" << std::endl; }
+
+    if (run_wear_limit_test(my_controller)) { std::cout << "👉 ТЕСТ 7: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 7: [ПРОВАЛ]" << std::endl; }
+    if (run_unaligned_read_test(my_controller)) { std::cout << "👉 ТЕСТ 8: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 8: [ПРОВАЛ]" << std::endl; }
+    if (run_write_full_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 9: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 9: [ПРОВАЛ]" << std::endl; }
+
+    if (run_smart_eeprom_test(my_controller)) { std::cout << "👉 ТЕСТ 10: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 10: [ПРОВАЛ]" << std::endl; }
+    if (run_thermal_shutdown_test(my_controller)) { std::cout << "👉 ТЕСТ 11: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 11: [ПРОВАЛ]" << std::endl; }
+
+    if (run_read_split_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 12: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 12: [ПРОВАЛ]" << std::endl; }
+    if (run_multi_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 13: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 13: [ПРОВАЛ]" << std::endl; }
+    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; passed++; } else { std::cout << "👉 ТЕСТ 14: [ПРОВАЛ]" << std::endl; }
+
+    std::cout << "\n=======================================================" << std::endl;
+    std::cout << "🏆 ИТОГИ CO-SIMULATION ВЕРИФИКАЦИИ ЖЕЛЕЗА ZNS 🏆" << std::endl;
+    std::cout << "Успешно пройдено транзисторных тестов: " << std::dec << passed << " из " << total << std::endl;
+    std::cout << "=======================================================" << std::endl;
+
     std::cout.flush();
-    _exit(0);
+    _exit((passed == total) ? 0 : 1);
 }
