@@ -257,9 +257,11 @@ gcc -o zns_software_test main.c zns_driver.c -I. -Igenerated
 ```bash
 cd /home/ilya/TestFlashSim/OriginalFlashSim
 rm -rf obj_dir
+rm -f tests/*.o
 
+# Передаем все декомпозированные компоненты оркестратора
 verilator -Wall --cc zns_fsm_validator.v \
-          --exe sim_main.cpp zns_driver.c \
+          --exe sim_main.cpp hardware_bridge.cpp flashsim_stubs.cpp zns_driver.c \
           ssd_ssd.cpp ssd_config.cpp ssd_controller.cpp thermal_manager.cpp \
           crypto_engine.cpp eeprom_manager.cpp zns_manager.cpp ssd_address.cpp \
           ssd_block.cpp ssd_bm.cpp ssd_bus.cpp ssd_channel.cpp ssd_die.cpp \
@@ -271,4 +273,5 @@ cd obj_dir
 make -j -f Vzns_fsm_validator.mk Vzns_fsm_validator
 cd ..
 ./obj_dir/Vzns_fsm_validator
+
 ```

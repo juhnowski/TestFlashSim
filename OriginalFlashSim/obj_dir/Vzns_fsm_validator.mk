@@ -45,6 +45,8 @@ VM_USER_LDLIBS = \
 VM_USER_CLASSES = \
   crypto_engine \
   eeprom_manager \
+  flashsim_stubs \
+  hardware_bridge \
   sim_main \
   ssd_address \
   ssd_block \
@@ -100,6 +102,10 @@ VPATH += $(VM_USER_DIR)
 crypto_engine.o: crypto_engine.cpp 
 	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
 eeprom_manager.o: eeprom_manager.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+flashsim_stubs.o: flashsim_stubs.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+hardware_bridge.o: hardware_bridge.cpp 
 	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
 sim_main.o: sim_main.cpp 
 	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
