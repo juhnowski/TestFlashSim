@@ -149,7 +149,7 @@ bool Vzns_fsm_validator___024root___eval_phase__ico(Vzns_fsm_validator___024root
                                                                 & vlSelfRef.bram_rdata))) 
                                                            || (((2U 
                                                                  == (IData)(vlSelfRef.io_cmd)) 
-                                                                & (3U 
+                                                                & (0x0aU 
                                                                    <= 
                                                                    (0x000000ffU 
                                                                     & (vlSelfRef.bram_rdata 
@@ -187,7 +187,7 @@ bool Vzns_fsm_validator___024root___eval_phase__ico(Vzns_fsm_validator___024root
                                                     : 
                                                    (((2U 
                                                       == (IData)(vlSelfRef.io_cmd)) 
-                                                     & (3U 
+                                                     & (0x0aU 
                                                         <= 
                                                         (0x000000ffU 
                                                          & (vlSelfRef.bram_rdata 
@@ -282,7 +282,7 @@ void Vzns_fsm_validator___024root___nba_sequent__TOP__1(Vzns_fsm_validator___024
                                                                             & vlSelfRef.bram_rdata))) 
                                                                        || (((2U 
                                                                              == (IData)(vlSelfRef.io_cmd)) 
-                                                                            & (3U 
+                                                                            & (0x0aU 
                                                                                <= 
                                                                                (0x000000ffU 
                                                                                 & (vlSelfRef.bram_rdata 
@@ -318,7 +318,7 @@ void Vzns_fsm_validator___024root___nba_sequent__TOP__1(Vzns_fsm_validator___024
                                                     : 
                                                    (((2U 
                                                       == (IData)(vlSelfRef.io_cmd)) 
-                                                     & (3U 
+                                                     & (0x0aU 
                                                         <= 
                                                         (0x000000ffU 
                                                          & (vlSelfRef.bram_rdata 

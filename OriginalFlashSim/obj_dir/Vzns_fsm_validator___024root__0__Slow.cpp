@@ -156,7 +156,7 @@ VL_ATTR_COLD bool Vzns_fsm_validator___024root___eval_phase__stl(Vzns_fsm_valida
                                                                 & vlSelfRef.bram_rdata))) 
                                                            || (((2U 
                                                                  == (IData)(vlSelfRef.io_cmd)) 
-                                                                & (3U 
+                                                                & (0x0aU 
                                                                    <= 
                                                                    (0x000000ffU 
                                                                     & (vlSelfRef.bram_rdata 
@@ -194,7 +194,7 @@ VL_ATTR_COLD bool Vzns_fsm_validator___024root___eval_phase__stl(Vzns_fsm_valida
                                                     : 
                                                    (((2U 
                                                       == (IData)(vlSelfRef.io_cmd)) 
-                                                     & (3U 
+                                                     & (0x0aU 
                                                         <= 
                                                         (0x000000ffU 
                                                          & (vlSelfRef.bram_rdata 

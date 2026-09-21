@@ -1,5 +1,6 @@
-=== NVMe ZNS SSD SMART LOG PAGE (EEPROM DUMP) ===
-Critical Warning Flags: 0x00 (OK)
-Percentage Used (Wear-level): 0%
-Total Addressable Zones: 64
-Max Zone Erase Count Tracked: 0
+=== NVMe SMART LOG PAGE 02h ===
+Max Zone Erase Count Tracked: 3
+Percentage Used (Wear-level): 60%
+
+Max Zone Erase Count Tracked: 3
+Percentage Used (Wear-level): 60%

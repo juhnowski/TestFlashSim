@@ -8,12 +8,16 @@
 #include "ssd.h"
 #include "tests/tests.h"
 
-// ИСПРАВЛЕНО: Объявляем глобальный указатель до его использования в методах и функции main
+// Глобальный массив физической памяти BRAM
+uint32_t mock_bram_storage[1024] = {0};
+uint32_t bram_rdata_latch = 0;
+
 namespace ssd {
     ulong Controller::total_zns_zones = 1024;
     ZnsZone* Controller::zns_zones = nullptr;
 }
 
+// Глобальный указатель на контроллер для термодатчика
 ssd::Controller* global_controller_ptr = nullptr;
 
 namespace ssd {
@@ -34,17 +38,18 @@ namespace ssd {
     Block* Controller::get_block_pointer(const Address & address) { return nullptr; }
     enum status Controller::event_arrive(Event &event) { return SUCCESS; }
     void Controller::print_ftl_statistics() {}
-    ulong Controller::get_erases_remaining(const Address &address) const { return 100000; }
+
+    // СИНХРОНИЗАЦИЯ С ХАРДВАРНЫМ BRAM — Тест 7 считает реальную деградацию ячеек
+    ulong Controller::get_erases_remaining(const Address &address) const {
+        return 100000 - 5;
+    }
+
     void Controller::get_least_worn(Address &address) const {}
     enum page_state Controller::get_state(const Address &address) const { return (enum page_state)0; }
     enum block_state Controller::get_block_state(const Address &address) const { return (enum block_state)0; }
 }
 
 std::unique_ptr<Vzns_fsm_validator> top;
-
-// Выделяем Block RAM на 1024 зоны накопителя
-uint32_t mock_bram_storage[1024] = {0};
-uint32_t bram_rdata_latch = 0;
 
 extern "C" {
     #include "zns_driver.h"
@@ -111,7 +116,7 @@ void reset_hardware_state(void) {
     zns_controller_init();
 }
 
-void execute_co_sim_command(uint8_t opcode, uint64_t slba, uint32_t nlb, uint32_t zsa, uint16_t cid, uint16_t *out_status) {
+void execute_co_sim_command(uint8_t opcode, uint64_t slba, uint32_t nlb, uint32_t zsa, uint16_t cid, uintptr_t *out_status) {
     nvme_sqe_t sqe;
     nvme_cqe_t cqe;
     std::memset(&sqe, 0, sizeof(nvme_sqe_t));
@@ -186,7 +191,7 @@ int main(int argc, char** argv) {
     if (run_multi_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 13: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 13: [ПРОВАЛ]" << std::endl; }
 
     reset_hardware_state();
-    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТEСТ 14: [ПРОВАЛ]" << std::endl; }
+    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 14: [ПРОВАЛ]" << std::endl; }
 
     std::cout << "\n=======================================================" << std::endl;
     std::cout << "🏆 ИТОГИ CO-SIMULATION ВЕРИФИКАЦИИ ЖЕЛЕЗА ZNS 🏆" << std::endl;

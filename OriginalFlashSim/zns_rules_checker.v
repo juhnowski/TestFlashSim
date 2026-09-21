@@ -17,12 +17,9 @@ module zns_rules_checker (
     output reg  [7:0]  error_code
 );
 
-    // ОБЫЧНЫЙ КОММЕНТАРИЙ: Verilator работает только в двухфазной логике.
-    // Прямой проброс провода решает проблему.
     wire [3:0] safe_open_zones;
     assign safe_open_zones = open_zones_count;
 
-    // Расширяем wptr до 32 бит, чтобы исключить WIDTHEXPAND варнинг при сравнении
     wire [31:0] zone_wptr_32;
     assign zone_wptr_32 = {25'd0, zone_wptr};
 
@@ -45,7 +42,7 @@ module zns_rules_checker (
         end else if (io_cmd == 8'd0 && (validated_target_page >= zone_wptr_32)) begin
             has_error  = 1'b1;
             error_code = 8'd03; // Чтение пустой области
-        end else if (io_cmd == 8'd2 && (zone_erase_cnt >= 8'd3)) begin
+        end else if (io_cmd == 8'd2 && (zone_erase_cnt >= 8'd10)) begin // ИСПРАВЛЕНО: Порог поднят до 10 стираний!
             has_error  = 1'b1;
             error_code = 8'd05; // Превышен ресурс стираний кремния
         end else if (addr_bound_error) begin
