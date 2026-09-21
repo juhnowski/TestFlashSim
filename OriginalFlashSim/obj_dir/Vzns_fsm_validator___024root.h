@@ -28,6 +28,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vzns_fsm_validator___024root final {
     CData/*0:0*/ zns_fsm_validator__DOT__has_error;
     CData/*7:0*/ zns_fsm_validator__DOT__internal_error_code;
     CData/*0:0*/ zns_fsm_validator__DOT__is_opening_new_zone;
+    CData/*7:0*/ zns_fsm_validator__DOT____Vcellinp__u_checker__io_cmd;
     CData/*2:0*/ __Vdly__zns_fsm_validator__DOT__current_state;
     CData/*0:0*/ __VstlFirstIteration;
     CData/*0:0*/ __VstlPhaseResult;
@@ -48,6 +49,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vzns_fsm_validator___024root final {
     VL_OUT(bram_addr,31,0);
     VL_IN(bram_rdata,31,0);
     VL_OUT(bram_wdata,31,0);
+    IData/*31:0*/ zns_fsm_validator__DOT__effective_target_page;
     IData/*31:0*/ __Vtrigprevexpr___TOP__validated_zone_id__0;
     IData/*31:0*/ __Vtrigprevexpr___TOP__validated_target_page__0;
     IData/*31:0*/ __Vtrigprevexpr___TOP__bram_rdata__0;

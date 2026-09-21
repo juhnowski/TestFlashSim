@@ -9,7 +9,7 @@ module zns_fsm_validator (
     input  wire        clk,
     input  wire        rst,
     input  wire        io_trigger,
-    input  wire [7:0]  io_cmd,
+    input  wire [7:0]  io_cmd, // 0=READ, 1=WRITE, 2=RESET, 3=APPEND
     input  wire [31:0] validated_zone_id,
     input  wire [31:0] validated_target_page,
     input  wire        addr_bound_error,
@@ -20,8 +20,8 @@ module zns_fsm_validator (
     output reg  [31:0] bram_wdata,
     output reg         bram_we,
 
-    output reg  [7:0]  out_status,
-    output reg  [7:0]  out_err_code
+    output reg  [7:0]  out_status, // 0=IDLE, 2=BUSY, 3=SUCCESS, 1=ERROR
+    output reg  [7:0]  out_err_code // При успехе APPEND сюда пишется ID записанной страницы!
 );
 
     wire [31:0] safe_bram_rdata;
@@ -42,26 +42,21 @@ module zns_fsm_validator (
     localparam ST_ERROR       = 3'd6;
 
     reg [2:0] current_state, next_state;
-
     wire [3:0] open_zones_count;
     wire       has_error;
     wire [7:0] internal_error_code;
 
-    wire is_opening_new_zone = (io_cmd == 8'd1) && (zone_wptr == 7'd0) && (!zone_is_full);
+    // Включаем APPEND (io_cmd == 3) в триггер открытия новой зоны
+    wire is_opening_new_zone = (io_cmd == 8'd1 || io_cmd == 8'd3) && (zone_wptr == 7'd0) && (!zone_is_full);
 
-    reg current_state_d1;
-    always @(posedge clk or posedge rst) begin
-        if (rst) current_state_d1 <= 1'b0;
-        else     current_state_d1 <= (current_state == ST_UPDATE_BRAM);
-    end
+    // Модифицированный чекер правил: для APPEND подменяем целевую страницу на текущий wptr,
+    // чтобы исключить ложное срабатывание ZNS_ERR_UNALIGNED_WRITE!
+    wire [31:0] effective_target_page;
+    assign effective_target_page = (io_cmd == 8'd3) ? {25'd0, zone_wptr} : validated_target_page;
 
-    wire state_update_pulse;
-    assign state_update_pulse = (current_state == ST_EXECUTE);
-
-    // 1. Подключаем комбинаторный верификатор правил ZNS
     zns_rules_checker u_checker (
-        .io_cmd                   (io_cmd),
-        .validated_target_page    (validated_target_page),
+        .io_cmd                   ((io_cmd == 8'd3) ? 8'd1 : io_cmd), // Для чекера APPEND эквивалентен легальной записи
+        .validated_target_page    (effective_target_page),
         .addr_bound_error         (addr_bound_error),
         .thermal_shutdown_tripped (thermal_shutdown_tripped),
         .zone_wptr                (zone_wptr),
@@ -73,12 +68,11 @@ module zns_fsm_validator (
         .error_code               (internal_error_code)
     );
 
-    // 2. Подключаем аппаратный счетчик ресурсов
     zns_resources_tracker u_tracker (
         .clk                (clk),
         .rst                (rst),
-        .io_cmd             (io_cmd),
-        .state_update_pulse (state_update_pulse),
+        .io_cmd             ((io_cmd == 8'd3) ? 8'd1 : io_cmd),
+        .state_update_pulse (current_state == ST_EXECUTE),
         .zone_wptr          (zone_wptr),
         .zone_is_full       (zone_is_full),
         .open_zones_count   (open_zones_count)
@@ -89,7 +83,6 @@ module zns_fsm_validator (
         else     current_state <= next_state;
     end
 
-    // ИСПРАВЛЕНО: удерживаем адрес стабильным во ВСЕХ рабочих состояниях (включая VALIDATE и ERROR)
     always @* begin
         if (current_state != ST_IDLE || io_trigger) begin
             bram_addr = validated_zone_id;
@@ -103,7 +96,6 @@ module zns_fsm_validator (
             ST_BRAM_WAIT:   next_state = ST_VALIDATE;
             ST_VALIDATE:    next_state = (has_error)  ? ST_ERROR : ST_EXECUTE;
             ST_EXECUTE:     next_state = ST_UPDATE_BRAM;
-
             ST_UPDATE_BRAM: next_state = (io_trigger) ? ST_UPDATE_BRAM : ST_IDLE;
             ST_ERROR:       next_state = (io_trigger) ? ST_ERROR : ST_IDLE;
             default:        next_state = ST_IDLE;
@@ -124,9 +116,7 @@ module zns_fsm_validator (
                     bram_we    <= 1'b0;
                 end
 
-                ST_BRAM_READ: begin
-                    out_status <= 8'd2;
-                end
+                ST_BRAM_READ: out_status <= 8'd2;
 
                 ST_ERROR: begin
                     out_status   <= 8'd1;
@@ -135,7 +125,8 @@ module zns_fsm_validator (
 
                 ST_EXECUTE: begin
                     bram_we <= 1'b1;
-                    if (io_cmd == 8'd1) begin
+                    // Поддержка WRITE (1) и APPEND (3)
+                    if (io_cmd == 8'd1 || io_cmd == 8'd3) begin
                         if (zone_wptr == 7'd63)
                             bram_wdata <= {8'd0, zone_erase_cnt, 8'd0, 1'b1, 7'd64};
                         else
@@ -146,8 +137,13 @@ module zns_fsm_validator (
                 end
 
                 ST_UPDATE_BRAM: begin
-                    out_status   <= 8'd3;
-                    out_err_code <= 8'd00;
+                    out_status   <= 8'd3; // SUCCESS
+                    // Если это был успешный APPEND, транслируем ID выделенной страницы в out_err_code в качестве CDW0!
+                    if (io_cmd == 8'd3) begin
+                        out_err_code <= zone_wptr;
+                    end else begin
+                        out_err_code <= 8'd00;
+                    end
                     bram_we      <= 1'b0;
                 end
             endcase
@@ -155,7 +151,3 @@ module zns_fsm_validator (
     end
 
 endmodule
-
-/* verilator lint_on SYNCASYNCNET */
-/* verilator lint_on CASEINCOMPLETE */
-/* verilator lint_on UNUSEDSIGNAL */

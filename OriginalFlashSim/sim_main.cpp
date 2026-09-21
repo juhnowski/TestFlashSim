@@ -8,19 +8,74 @@
 #include "ssd.h"
 #include "tests/tests.h"
 
-// ФИЗИЧЕСКОЕ ВЫДЕЛЕНИЕ ПАМЯТИ ПОД ГЛОБАЛЬНЫЕ УКАЗАТЕЛИ (теперь линковщик их найдет)
 std::unique_ptr<Vzns_fsm_validator> top = nullptr;
 ssd::Controller* global_controller_ptr = nullptr;
 
-// Импортируем физический массив BRAM из hardware_bridge.cpp
 extern uint32_t mock_bram_storage[];
 extern uint32_t bram_rdata_latch;
 
 extern "C" {
     #include "zns_driver.h"
-    // Объявляем как extern, так как физически указатель лежит в hardware_bridge.cpp
     extern void* verilator_top_model;
     bool bridge_run_crypto_key_test(void* controller_ptr);
+}
+
+// ДОБАВЛЕНО: Сценарий ТЕСТА 16 для верификации аппаратного Zone Append
+bool run_zone_append_pipeline_test(ssd::Controller &controller) {
+    std::cout << "   [ТЕСТ 16]: Тестирование аппаратного конвейера Zone Append на базовый LBA..." << std::endl;
+
+    // Базовый LBA начала Зоны 90 (90 * 64 = 5760). Хост всегда шлет запросы строго на этот адрес!
+    uint64_t base_lba = 90 * 64;
+
+    nvme_sqe_t sqe;
+    nvme_cqe_t cqe;
+
+    // 1. Сбрасываем Зону 90 перед тестом
+    std::memset(&sqe, 0, sizeof(nvme_sqe_t));
+    std::memset(&cqe, 0, sizeof(nvme_cqe_t));
+    sqe.opcode = NVME_CMD_ZONE_MGMT;
+    sqe.zsa = NVME_ZONE_ACTION_RESET;
+    sqe.slba = base_lba;
+    zns_process_nvme_command(&sqe, &cqe);
+    if (cqe.status != 0x0000) return false;
+
+    // 2. Отправляем ПЕРВЫЙ Append на базовый LBA. Ожидаем выделение страницы 0 (LBA 5760)
+    std::memset(&sqe, 0, sizeof(nvme_sqe_t));
+    std::memset(&cqe, 0, sizeof(nvme_cqe_t));
+    sqe.opcode = 0x7D; // Zone Append
+    sqe.slba = base_lba;
+    zns_process_nvme_command(&sqe, &cqe);
+    if (cqe.status != 0x0000 || cqe.cdw0 != base_lba + 0) {
+        std::cout << "   [ТЕСТ 16 ОШИБКА]: Первое смещение неверно: " << cqe.cdw0 << std::endl;
+        return false;
+    }
+    std::cout << "   [ТЕСТ 15 ПОДТВЕРЖДЕНИЕ]: Размещение 1-го блока -> LBA " << cqe.cdw0 << " [OK]" << std::endl;
+
+    // 3. Отправляем ВТОРОЙ Append снова на БАЗОВЫЙ LBA. Автомат обязан сам продвинуть wptr и вернуть LBA 5761!
+    std::memset(&sqe, 0, sizeof(nvme_sqe_t));
+    std::memset(&cqe, 0, sizeof(nvme_cqe_t));
+    sqe.opcode = 0x7D;
+    sqe.slba = base_lba;
+    zns_process_nvme_command(&sqe, &cqe);
+    if (cqe.status != 0x0000 || cqe.cdw0 != base_lba + 1) {
+        std::cout << "   [ТЕСТ 16 ОШИБКА]: Автоматическое продвижение wptr сломалось: " << cqe.cdw0 << std::endl;
+        return false;
+    }
+    std::cout << "   [ТЕСТ 15 ПОДТВЕРЖДЕНИЕ]: Размещение 2-го блока -> LBA " << cqe.cdw0 << " [OK]" << std::endl;
+
+    // 4. Отправляем ТРЕТИЙ Append снова на БАЗОВЫЙ LBA. Ожидаем LBA 5762
+    std::memset(&sqe, 0, sizeof(nvme_sqe_t));
+    std::memset(&cqe, 0, sizeof(nvme_cqe_t));
+    sqe.opcode = 0x7D;
+    sqe.slba = base_lba;
+    zns_process_nvme_command(&sqe, &cqe);
+    if (cqe.status != 0x0000 || cqe.cdw0 != base_lba + 2) {
+        return false;
+    }
+    std::cout << "   [ТЕСТ 15 ПОДТВЕРЖДЕНИЕ]: Размещение 3-го блока -> LBA " << cqe.cdw0 << " [OK]" << std::endl;
+
+    std::cout << "   [ТЕСТ 16]: Аппаратный Zone Append контроллер распределяет адреса абсолютно верно!" << std::endl;
+    return true;
 }
 
 void reset_hardware_state(void) {
@@ -42,13 +97,11 @@ void reset_hardware_state(void) {
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-
-    // Аллоцируем саму Verilator модель
     top = std::make_unique<Vzns_fsm_validator>();
     verilator_top_model = top.get();
 
     std::cout << "=======================================================" << std::endl;
-    std::cout << "🚀 ЗАПУСК СКВОЗНОЙ CO-SIMULATION СЮИТЫ ТЕСТОВ (1-15) 🚀" << std::endl;
+    std::cout << "🚀 ЗАПУСК СКВОЗНОЙ CO-SIMULATION СЮИТЫ ТЕСТОВ (1-16) 🚀" << std::endl;
     std::cout << "=======================================================" << std::endl;
 
     reset_hardware_state();
@@ -99,11 +152,14 @@ int main(int argc, char** argv) {
     if (run_multi_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 13: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 13: [ПРОВАЛ]" << std::endl; }
 
     reset_hardware_state();
-    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТEСТ 14: [ПРОВАЛ]" << std::endl; }
+    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 14: [ПРОВАЛ]" << std::endl; }
 
-    // ЗАПУСК НАШЕГО НОВОГО ТЕСТА 15 КЛЮЧЕЙ КРИПТОГРАФИИ ЧЕРЕЗ СИ-МОСТ
     reset_hardware_state();
     if (bridge_run_crypto_key_test(&my_controller)) { std::cout << "👉 ТЕСТ 15: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 15: [ПРОВАЛ]" << std::endl; }
+
+    // ЗАПУСК НАШЕГО НОВОГО ТЕСТА 16 ZONE APPEND
+    reset_hardware_state();
+    if (run_zone_append_pipeline_test(my_controller)) { std::cout << "👉 ТЕСТ 16: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 16: [ПРОВАЛ]" << std::endl; }
 
     std::cout << "\n=======================================================" << std::endl;
     std::cout << "🏆 ИТОГИ CO-SIMULATION ВЕРИФИКАЦИИ ЖЕЛЕЗА ZNS 🏆" << std::endl;
