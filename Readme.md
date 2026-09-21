@@ -273,5 +273,10 @@ cd obj_dir
 make -j -f Vzns_fsm_validator.mk Vzns_fsm_validator
 cd ..
 ./obj_dir/Vzns_fsm_validator
+```
 
+# Финальный запуск тестов
+```bash
+cd /home/ilya/TestFlashSim/OriginalFlashSim
+make co-sim
 ```
