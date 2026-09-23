@@ -1,46 +1,73 @@
 # /home/ilya/TestFlashSim/OriginalFlashSim/Makefile
 
-.PHONY: all co-sim clean help
+# ====================================================================
+# Настройки компиляции и путей Verilator
+# ====================================================================
+VERILATOR = verilator
+VERILATOR_FLAGS = -Wall --cc --trace --exe --build
 
-all: co-sim
+RTL_SOURCES = zns_fsm_validator.v zns_rules_checker.v
+TOP_MODULE = zns_fsm_validator
+OBJ_DIR = obj_dir
 
-help:
-	@echo "Доступные команды для верификации ZNS-контроллера:"
-	@echo "  make co-sim  - Скомпилировать RTL и C++ мосты, запустить сюиту из 17 тестов"
-	@echo "  make clean   - Удалить временные объектные файлы и папку сборки Verilator"
+CXX = g++
+CXXFLAGS = -O3 -Wall -std=c++17
 
-co-sim: clean
-	@echo "======================================================="
-	@echo "🛠️  ЗАПУСК АВТОМАТИЧЕСКОЙ СБОРКИ CO-SIMULATION КОНВЕЙЕРА"
-	@echo "======================================================="
+# ДИНАМИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ В NIXOS:
+# Извлекаем внутренний корневой путь рантайма Verilator
+VERILATOR_ROOT = $(shell verilator --getenv VERILATOR_ROOT)
 
-	# 1. Трансляция Verilog-схемы и генерация С++ обвязки через Verilator
-	verilator -Wall --cc zns_fsm_validator.v \
-	          --exe sim_main.cpp hardware_bridge.cpp flashsim_stubs.cpp zns_driver.c \
-	          ssd_ssd.cpp ssd_config.cpp ssd_controller.cpp thermal_manager.cpp \
-	          crypto_engine.cpp eeprom_manager.cpp zns_manager.cpp ssd_address.cpp \
-	          ssd_block.cpp ssd_bm.cpp ssd_bus.cpp ssd_channel.cpp ssd_die.cpp \
-	          ssd_event.cpp ssd_gc.cpp ssd_package.cpp ssd_page.cpp ssd_plane.cpp \
-	          ssd_raidssd.cpp ssd_ram.cpp ssd_stats.cpp ssd_wl.cpp ssd_ftlparent.cpp \
-	          tests/test_*.cpp -I.
+# Формируем корректные флаги инклудов для GCC
+VERILATOR_INCLUDE = -I$(OBJ_DIR) \
+                    -I$(VERILATOR_ROOT)/include \
+                    -I$(VERILATOR_ROOT)/include/vltstd
 
-	@echo "======================================================="
-	@echo "📦  КОМПИЛЯЦИЯ И ЛИНКОВКА ИСПОЛНЯЕМОГО МОНОЛИТА G++"
-	@echo "======================================================="
+# ====================================================================
+# Распределенные правила линковки и сборки сервера
+# ====================================================================
 
-	# 2. Нативная сборка бинарника внутри сгенерированной папки
-	cd obj_dir && $(MAKE) -j -f Vzns_fsm_validator.mk Vzns_fsm_validator
+.PHONY: nbd-server clean-nbd
 
-	@echo "======================================================="
-	@echo "🚀  ЗАПУСК СКВОЗНОЙ ВЕРИФИКАЦИИ КРЕМНИЯ (ТЕСТЫ 1-17)"
-	@echo "======================================================="
+# 1. Главный таргет для сборки декомпозированного сервера блочного устройства
+nbd-server: $(OBJ_DIR)/V$(TOP_MODULE).h hardware_bridge.o nbd_negotiation.o nbd_server.o sim_main.o
+	@echo "📦 Линковка модульного Verilator ZNS NBD сервера..."
+	$(CXX) $(CXXFLAGS) \
+		sim_main.o \
+		nbd_negotiation.o \
+		nbd_server.o \
+		hardware_bridge.o \
+		$(OBJ_DIR)/V$(TOP_MODULE)__ALL.a \
+		$(VERILATOR_ROOT)/include/verilated.cpp \
+		$(VERILATOR_ROOT)/include/verilated_threads.cpp \
+		$(VERILATOR_ROOT)/include/verilated_vcd_c.cpp \
+		-o zns_nbd_server
+	@echo "🔥 Триумф! Модульный бинарник 'zns_nbd_server' успешно собран."
 
-	# 3. Выполнение тестов из корня проекта, где лежит конфигурационный ssd.conf
-	./obj_dir/Vzns_fsm_validator
+# 2. Правило для генерации С++ кода из исходных Verilog-файлов
+$(OBJ_DIR)/V$(TOP_MODULE).h: $(RTL_SOURCES)
+	@echo "⚙️  Трансляция RTL схем через Verilator..."
+	$(VERILATOR) $(VERILATOR_FLAGS) --top-module $(TOP_MODULE) $(RTL_SOURCES)
 
-clean:
-	@echo "🧹 Очистка временных файлов и кэша тестов..."
-	@rm -rf obj_dir
-	@rm -f tests/*.o
-	@rm -f eeprom_diagnostic.bin
-	@echo "✨ Очистка завершена."
+# 3. Компиляция аппаратного моста (mock_bram_storage)
+hardware_bridge.o: hardware_bridge.cpp
+	@echo "🛠️  Компиляция аппаратного моста..."
+	$(CXX) $(CXXFLAGS) $(VERILATOR_INCLUDE) -c hardware_bridge.cpp -o hardware_bridge.o
+
+# 4. Компиляция изолированного модуля хендшейка Newstyle
+nbd_negotiation.o: nbd_negotiation.cpp nbd_protocol.h
+	@echo "🛠️  Компиляция модуля хендшейка nbd_negotiation.cpp..."
+	$(CXX) $(CXXFLAGS) $(VERILATOR_INCLUDE) -c nbd_negotiation.cpp -o nbd_negotiation.o
+
+# 5. Компиляция модуля трансмиссии I/O команд (Read/Write/Trim)
+nbd_server.o: nbd_server.cpp nbd_server.h nbd_protocol.h
+	@echo "🛠️  Компиляция модуля трансмиссии nbd_server.cpp..."
+	$(CXX) $(CXXFLAGS) $(VERILATOR_INCLUDE) -c nbd_server.cpp -o nbd_server.o
+
+# 6. Компиляция оркестратора симуляции и точки входа
+sim_main.o: sim_main.cpp nbd_server.h
+	@echo "🛠️  Компиляция точки входа sim_main.cpp..."
+	$(CXX) $(CXXFLAGS) $(VERILATOR_INCLUDE) -c sim_main.cpp -o sim_main.o
+
+# Очистка всех артефактов декомпозированной сборки NBD-сервера
+clean-nbd:
+	rm -rf sim_main.o nbd_negotiation.o nbd_server.o hardware_bridge.o zns_nbd_server

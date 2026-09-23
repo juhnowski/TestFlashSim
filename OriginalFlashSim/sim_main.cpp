@@ -1,119 +1,143 @@
 // /home/ilya/TestFlashSim/OriginalFlashSim/sim_main.cpp
 #include <iostream>
-#include <memory>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
+#include <thread>
 #include <cstring>
-#include "Vzns_fsm_validator.h"
 #include "verilated.h"
-#include "ssd.h"
-#include "tests/tests.h"
+#include "Vzns_fsm_validator.h"
+#include "nbd_server.h"
+#include "nbd_protocol.h"
 
-std::unique_ptr<Vzns_fsm_validator> top = nullptr;
-ssd::Controller* global_controller_ptr = nullptr;
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ЛИНКОВКИ С HARDWARE_BRIDGE.CPP
+Vzns_fsm_validator* top = nullptr;
 
-extern uint32_t mock_bram_storage[];
-extern uint32_t bram_rdata_latch;
+// Объявляем пространство имен и класс в строгом соответствии с заголовочными файлами проекта
+namespace ssd {
+    class Controller {
+    public:
+        void check_thermal_shutdown();
+    };
 
-extern "C" {
-    #include "zns_driver.h"
-    extern void* verilator_top_model;
-    bool bridge_run_crypto_key_test(void* controller_ptr);
-    bool bridge_run_zone_append_test(void* controller_ptr);
-    bool bridge_run_zde_test(void* controller_ptr);
+    void Controller::check_thermal_shutdown() {
+        // Пустая заглушка термического контроля для RAM-эмулятора
+    }
 }
 
-void reset_hardware_state(void) {
-    for (int i = 0; i < 1024; i++) mock_bram_storage[i] = 0x00000000;
-    bram_rdata_latch = 0x00000000;
+// Выделяем указатель для линковщика
+ssd::Controller* global_controller_ptr = nullptr;
 
-    if (top) {
-        top->rst = 1;
-        for (int i = 0; i < 10; i++) {
-            top->clk = 1; top->eval();
-            top->clk = 0; top->eval();
-        }
-        top->rst = 0;
-        top->clk = 1; top->eval();
-        top->clk = 0; top->eval();
+extern "C" {
+    void verilator_tick_hardware(Vzns_fsm_validator* top);
+}
+extern uint8_t mock_bram_storage[TOTAL_SIZE_BYTES];
+
+// Поток управления: слушает Unix Domain Socket для сброса зон напрямую из Rust, минуя ядро
+void management_socket_thread() {
+    const char* sock_path = "/tmp/zns_mgmt.sock";
+    unlink(sock_path);
+
+    int server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("[Mgmt-Server] Критическая ошибка: socket() failed");
+        return;
     }
-    zns_controller_init();
+
+    struct sockaddr_un addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+
+    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0 || listen(server_fd, 5) < 0) {
+        perror("[Mgmt-Server] Критическая ошибка: bind() или listen() failed");
+        close(server_fd);
+        return;
+    }
+
+    std::cout << "[Mgmt-Server] Канал управления активен: " << sock_path << std::endl;
+
+    while (true) {
+        int client_fd = accept(server_fd, nullptr, nullptr);
+        if (client_fd < 0) {
+            perror("[Mgmt-Server] Предупреждение: accept() failed");
+            continue;
+        }
+
+        std::cout << "[Mgmt-Server] Rust-клиент подключился к сокету управления." << std::endl;
+
+        uint64_t zone_id = 0;
+        char* zone_ptr = reinterpret_cast<char*>(&zone_id);
+        uint32_t bytes_received = 0;
+        bool success = true;
+
+        while (bytes_received < sizeof(zone_id)) {
+            ssize_t n = read(client_fd, zone_ptr + bytes_received, sizeof(zone_id) - bytes_received);
+            if (n < 0) {
+                std::cerr << "[Mgmt-Server] Ошибка read(): " << strerror(errno) << " (код: " << errno << ")" << std::endl;
+                success = false;
+                break;
+            }
+            if (n == 0) {
+                std::cerr << "[Mgmt-Server] Преждевременный EOF от клиента! Получено всего " << bytes_received << " из 8 байт." << std::endl;
+                success = false;
+                break;
+            }
+            bytes_received += n;
+            std::cout << "[Mgmt-Server] Считано " << n << " байт. Всего: " << bytes_received << " / 8" << std::endl;
+        }
+
+        if (success) {
+            std::cout << "[Mgmt-Server] 🔄 Успешно извлечен ID зоны для сброса: " << zone_id << std::endl;
+
+            uint64_t zone_size = TOTAL_SIZE_BYTES / NUM_ZONES;
+            uint64_t zone_offset = zone_id * zone_size;
+
+            std::memset(&mock_bram_storage[zone_offset], 0, zone_size);
+
+            if (top) {
+                verilator_tick_hardware(top);
+            }
+
+            uint8_t ack = 1;
+            ssize_t w_res = write(client_fd, &ack, 1);
+            if (w_res != 1) {
+                std::cerr << "[Mgmt-Server] Ошибка отправки ACK: " << (w_res < 0 ? strerror(errno) : "частичная запись") << std::endl;
+            } else {
+                std::cout << "[Mgmt-Server] Байт ACK (1) успешно отправлен в Rust-драйвер." << std::endl;
+            }
+        } else {
+            std::cerr << "[Mgmt-Server] Обработка команды сброса отклонена из-за ошибки чтения данных." << std::endl;
+        }
+
+        // Даем ядру время протолкнуть буфер ACK перед жестким закрытием дескриптора сокета
+        shutdown(client_fd, SHUT_WR);
+        char dummy[10];
+        while (read(client_fd, dummy, sizeof(dummy)) > 0); // Корректное закрытие сокета (TCP/Unix linger)
+        close(client_fd);
+        std::cout << "[Mgmt-Server] Сессия закрыта, сокет освобожден." << std::endl;
+    }
 }
 
 int main(int argc, char** argv) {
+    std::cout << "=======================================================" << std::endl;
+    std::cout << "🚀 Запуск Verilator ZNS RAM-эмулятора с Mgmt-сокетом..." << std::endl;
+    std::cout << "=======================================================" << std::endl;
+
     Verilated::commandArgs(argc, argv);
-    top = std::make_unique<Vzns_fsm_validator>();
-    verilator_top_model = top.get();
 
-    std::cout << "=======================================================" << std::endl;
-    std::cout << "🚀 ЗАПУСК СКВОЗНОЙ CO-SIMULATION СЮИТЫ ТЕСТОВ (1-17) 🚀" << std::endl;
-    std::cout << "=======================================================" << std::endl;
+    top = new Vzns_fsm_validator;
+    global_controller_ptr = reinterpret_cast<ssd::Controller*>(new char[sizeof(ssd::Controller)]);
 
-    reset_hardware_state();
-    ssd::load_config();
-    ssd::Ssd my_ssd;
-    ssd::Controller my_controller(my_ssd);
-    global_controller_ptr = &my_controller;
+    // Запускаем независимый поток управления
+    std::thread mgmt_thread(management_socket_thread);
+    mgmt_thread.detach();
 
-    std::cout << "\n[СИСТЕМА]: Запуск тестирования аппаратного Verilog-ядра..." << std::endl;
+    // Запускаем основной NBD сервер диска (блокирующий вызов)
+    start_nbd_server(top, 10809);
 
-    reset_hardware_state();
-    if (run_sequential_write_test(my_controller)) { std::cout << "👉 ТЕСТ 1: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 1: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_random_write_protection_test(my_controller)) { std::cout << "👉 ТЕСТ 2: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 2: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 3: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 3: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_zone_resources_test(my_controller)) { std::cout << "👉 ТEСТ 4: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 4: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_read_empty_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 5: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 5: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_crypto_security_test(my_controller)) { std::cout << "👉 ТЕСТ 6: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 6: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_wear_limit_test(my_controller)) { std::cout << "👉 ТЕСТ 7: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 7: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_unaligned_read_test(my_controller)) { std::cout << "👉 ТЕСТ 8: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 8: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_write_full_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 9: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 9: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_smart_eeprom_test(my_controller)) { std::cout << "👉 ТЕСТ 10: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 10: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_thermal_shutdown_test(my_controller)) { std::cout << "👉 ТЕСТ 11: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 11: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_read_split_zone_test(my_controller)) { std::cout << "👉 ТЕСТ 12: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 12: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_multi_zone_reset_test(my_controller)) { std::cout << "👉 ТЕСТ 13: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 13: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (run_thermal_stress_test(my_controller)) { std::cout << "👉 ТЕСТ 14: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 14: [ПРОВАЛ]" << std::endl; }
-
-    reset_hardware_state();
-    if (bridge_run_crypto_key_test(&my_controller)) { std::cout << "👉 ТЕСТ 15: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 15: [ПРОВАЛ]" << std::endl; }
-
-    // ТЕСТ 16: Вызов через стабильный Си-мост
-    reset_hardware_state();
-    if (bridge_run_zone_append_test(&my_controller)) { std::cout << "👉 ТЕСТ 16: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 16: [ПРОВАЛ]" << std::endl; }
-
-    // ТЕСТ 17: Вызов через стабильный Си-мост
-    reset_hardware_state();
-    if (bridge_run_zde_test(&my_controller)) { std::cout << "👉 ТЕСТ 17: [УСПЕШНО]" << std::endl; } else { std::cout << "👉 ТЕСТ 17: [ПРОВАЛ]" << std::endl; }
-
-    std::cout << "\n=======================================================" << std::endl;
-    std::cout << "🏆 ИТОГИ CO-SIMULATION ВЕРИФИКАЦИИ ЖЕЛЕЗА ZNS 🏆" << std::endl;
-    std::cout << "Выполнение сюиты завершено." << std::endl;
-    std::cout << "=======================================================" << std::endl;
-
-    std::cout.flush();
-    _exit(0);
+    top->final();
+    delete top;
+    delete[] reinterpret_cast<char*>(global_controller_ptr);
+    return EXIT_SUCCESS;
 }

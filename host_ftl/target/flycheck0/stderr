@@ -1,0 +1,373 @@
+   0.022014184s  INFO prepare_target{force=false package_id=host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl) target="host_ftl"}: cargo::core::compiler::fingerprint: fingerprint error for host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl)/Check { test: false }/TargetInner { name: "host_ftl", doc: true, ..: with_path("/home/ilya/TestFlashSim/host_ftl/src/main.rs", Edition2021) }
+   0.022027867s  INFO prepare_target{force=false package_id=host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl) target="host_ftl"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/host_ftl-0be4ce83c8d4a307/bin-host_ftl`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   5: cargo::ops::cargo_compile::compile_ws
+   6: cargo::ops::cargo_compile::compile_with_exec
+   7: cargo::ops::cargo_compile::compile
+   8: cargo::commands::check::exec
+   9: <cargo::cli::Exec>::exec
+  10: cargo::cli::main
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: std::rt::lang_start_internal
+  15: main
+  16: __libc_start_call_main
+  17: __libc_start_main_alias_2
+  18: _start
+   0.024722014s  INFO prepare_target{force=false package_id=libc v0.2.189 target="libc"}: cargo::core::compiler::fingerprint: fingerprint error for libc v0.2.189/Check { test: false }/TargetInner { ..: lib_target("libc", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189/src/lib.rs", Edition2021) }
+   0.024730558s  INFO prepare_target{force=false package_id=libc v0.2.189 target="libc"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/libc-3b12adfef781567d/lib-libc`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::cli::main
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: main
+  17: __libc_start_call_main
+  18: __libc_start_main_alias_2
+  19: _start
+   0.024918278s  INFO prepare_target{force=false package_id=libc v0.2.189 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for libc v0.2.189/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189/build.rs", Edition2021) }
+   0.024925120s  INFO prepare_target{force=false package_id=libc v0.2.189 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/libc-7f04ce5c10bcecc7/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::custom_build::build_work
+   4: cargo::core::compiler::custom_build::prepare
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::cli::main
+  15: cargo::main
+  16: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  17: std::rt::lang_start::<()>::{closure#0}
+  18: std::rt::lang_start_internal
+  19: main
+  20: __libc_start_call_main
+  21: __libc_start_main_alias_2
+  22: _start
+   0.024987603s  INFO prepare_target{force=false package_id=libc v0.2.189 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for libc v0.2.189/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189/build.rs", Edition2021) }
+   0.024992217s  INFO prepare_target{force=false package_id=libc v0.2.189 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/libc-d9611a1b0ec3f5c1/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::cli::main
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: std::rt::lang_start_internal
+  18: main
+  19: __libc_start_call_main
+  20: __libc_start_main_alias_2
+  21: _start
+   0.025144863s  INFO prepare_target{force=false package_id=tokio-uring v0.5.0 target="tokio_uring"}: cargo::core::compiler::fingerprint: fingerprint error for tokio-uring v0.5.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("tokio_uring", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-uring-0.5.0/src/lib.rs", Edition2018) }
+   0.025151854s  INFO prepare_target{force=false package_id=tokio-uring v0.5.0 target="tokio_uring"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/tokio-uring-2b11c85d25466e5c/lib-tokio_uring`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::cli::main
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: main
+  17: __libc_start_call_main
+  18: __libc_start_main_alias_2
+  19: _start
+   0.025437401s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="io_uring"}: cargo::core::compiler::fingerprint: fingerprint error for io-uring v0.6.4/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("io_uring", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/io-uring-0.6.4/src/lib.rs", Edition2018) }
+   0.025444722s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="io_uring"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/io-uring-b8d04e834e2fac95/lib-io_uring`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::cli::main
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: main
+  18: __libc_start_call_main
+  19: __libc_start_main_alias_2
+  20: _start
+   0.025649927s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for io-uring v0.6.4/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/io-uring-0.6.4/build.rs", Edition2018) }
+   0.025656469s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/io-uring-bd557fe6b16ab99f/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::custom_build::build_work
+   4: cargo::core::compiler::custom_build::prepare
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  10: cargo::ops::cargo_compile::compile_ws
+  11: cargo::ops::cargo_compile::compile_with_exec
+  12: cargo::ops::cargo_compile::compile
+  13: cargo::commands::check::exec
+  14: <cargo::cli::Exec>::exec
+  15: cargo::cli::main
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: std::rt::lang_start_internal
+  20: main
+  21: __libc_start_call_main
+  22: __libc_start_main_alias_2
+  23: _start
+   0.025715400s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for io-uring v0.6.4/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/io-uring-0.6.4/build.rs", Edition2018) }
+   0.025720444s  INFO prepare_target{force=false package_id=io-uring v0.6.4 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/io-uring-3ab811fde15587dd/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::cli::main
+  15: cargo::main
+  16: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  17: std::rt::lang_start::<()>::{closure#0}
+  18: std::rt::lang_start_internal
+  19: main
+  20: __libc_start_call_main
+  21: __libc_start_main_alias_2
+  22: _start
+   0.025845481s  INFO prepare_target{force=false package_id=socket2 v0.4.10 target="socket2"}: cargo::core::compiler::fingerprint: fingerprint error for socket2 v0.4.10/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("socket2", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.4.10/src/lib.rs", Edition2018) }
+   0.025853988s  INFO prepare_target{force=false package_id=socket2 v0.4.10 target="socket2"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/socket2-fdfbe6726a0b668a/lib-socket2`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::cli::main
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: main
+  18: __libc_start_call_main
+  19: __libc_start_main_alias_2
+  20: _start
+   0.025968512s  INFO prepare_target{force=false package_id=tokio v1.53.1 target="tokio"}: cargo::core::compiler::fingerprint: fingerprint error for tokio v1.53.1/Check { test: false }/TargetInner { ..: lib_target("tokio", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/lib.rs", Edition2021) }
+   0.025974923s  INFO prepare_target{force=false package_id=tokio v1.53.1 target="tokio"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/tokio-51256dcd64d0afd3/lib-tokio`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::cli::main
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: main
+  18: __libc_start_call_main
+  19: __libc_start_main_alias_2
+  20: _start
+   0.026205334s  INFO prepare_target{force=false package_id=mio v1.2.3 target="mio"}: cargo::core::compiler::fingerprint: fingerprint error for mio v1.2.3/Check { test: false }/TargetInner { ..: lib_target("mio", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.2.3/src/lib.rs", Edition2021) }
+   0.026211959s  INFO prepare_target{force=false package_id=mio v1.2.3 target="mio"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/mio-c0a487b2f2dc5b0d/lib-mio`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::cli::main
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: std::rt::lang_start_internal
+  18: main
+  19: __libc_start_call_main
+  20: __libc_start_main_alias_2
+  21: _start
+   0.026337718s  INFO prepare_target{force=false package_id=socket2 v0.6.5 target="socket2"}: cargo::core::compiler::fingerprint: fingerprint error for socket2 v0.6.5/Check { test: false }/TargetInner { ..: lib_target("socket2", ["lib"], "/home/ilya/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/socket2-0.6.5/src/lib.rs", Edition2021) }
+   0.026343985s  INFO prepare_target{force=false package_id=socket2 v0.6.5 target="socket2"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/socket2-6228f0162242e367/lib-socket2`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::cli::main
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: std::rt::lang_start_internal
+  18: main
+  19: __libc_start_call_main
+  20: __libc_start_main_alias_2
+  21: _start
+   0.026476583s  INFO prepare_target{force=false package_id=host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl) target="host_ftl"}: cargo::core::compiler::fingerprint: fingerprint error for host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl)/Check { test: true }/TargetInner { name: "host_ftl", doc: true, ..: with_path("/home/ilya/TestFlashSim/host_ftl/src/main.rs", Edition2021) }
+   0.026483421s  INFO prepare_target{force=false package_id=host_ftl v0.1.0 (/home/ilya/TestFlashSim/host_ftl) target="host_ftl"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ilya/TestFlashSim/host_ftl/target/debug/.fingerprint/host_ftl-7a55ad59353c77d2/test-bin-host_ftl`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: <std::io::error::Error as anyhow::context::ext::StdError>::ext_context::<alloc::string::String>
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::prepare_target
+   3: cargo::core::compiler::compile
+   4: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   5: cargo::ops::cargo_compile::compile_ws
+   6: cargo::ops::cargo_compile::compile_with_exec
+   7: cargo::ops::cargo_compile::compile
+   8: cargo::commands::check::exec
+   9: <cargo::cli::Exec>::exec
+  10: cargo::cli::main
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: std::rt::lang_start_internal
+  15: main
+  16: __libc_start_call_main
+  17: __libc_start_main_alias_2
+  18: _start
+   Compiling libc v0.2.189
+   Compiling io-uring v0.6.4
+error: could not compile `io-uring` (build script) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `libc` (build script) due to 1 previous error
