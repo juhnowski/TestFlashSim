@@ -11,7 +11,7 @@ pub const TOTAL_LOGICAL_SECTORS: usize = (NUM_ZONES * ZONE_SIZE_PAGES * PAGE_SIZ
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicalAddress {
     pub zone_id: usize,
-    pub page_offset: usize, // 0..64
+    pub page_offset: usize,
 }
 
 #[derive(Debug)]

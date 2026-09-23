@@ -1,5 +1,6 @@
 // /home/ilya/TestFlashSim/OriginalFlashSim/nbd_negotiation.cpp
 #include "nbd_protocol.h"
+#include "nbd_server.h" // ДОБАВЛЕНО: Теперь TOTAL_SIZE_BYTES прозрачно виден здесь
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
@@ -16,8 +17,8 @@ bool run_nbd_negotiation(int client_fd) {
     } __attribute__((packed)) greeting;
 
     greeting.magic = __builtin_bswap64(ZNS_NBD_INIT_MAGIC);
-    greeting.opts_magic = __builtin_bswap64(0x49484156454f5054ULL); // "IHAVEOPT"
-    greeting.global_flags = __builtin_bswap16(1);                     // NBD_FLAG_FIXED_NEWSTYLE
+    greeting.opts_magic = __builtin_bswap64(0x444d41474943ULL); // "IHAVEOPT"
+    greeting.global_flags = __builtin_bswap16(1);               // NBD_FLAG_FIXED_NEWSTYLE
 
     if (write(client_fd, &greeting, sizeof(greeting)) != sizeof(greeting)) {
         std::cerr << "[NBD] Ошибка отправки приветствия." << std::endl;
@@ -55,6 +56,7 @@ bool run_nbd_negotiation(int client_fd) {
                 uint16_t transmission_flags;
             } __attribute__((packed)) export_reply;
 
+            // Константа теперь успешно подтягивается из nbd_server.h
             export_reply.disk_size = __builtin_bswap64(TOTAL_SIZE_BYTES);
             export_reply.transmission_flags = __builtin_bswap16(1); // NBD_FLAG_HAS_FLAGS
 

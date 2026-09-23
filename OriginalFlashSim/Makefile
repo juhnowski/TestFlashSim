@@ -13,8 +13,7 @@ OBJ_DIR = obj_dir
 CXX = g++
 CXXFLAGS = -O3 -Wall -std=c++17
 
-# ДИНАМИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ В NIXOS:
-# Извлекаем внутренний корневой путь рантайма Verilator
+# Динамически извлекаем внутренний корневой путь рантайма Verilator под NixOS
 VERILATOR_ROOT = $(shell verilator --getenv VERILATOR_ROOT)
 
 # Формируем корректные флаги инклудов для GCC
@@ -23,14 +22,14 @@ VERILATOR_INCLUDE = -I$(OBJ_DIR) \
                     -I$(VERILATOR_ROOT)/include/vltstd
 
 # ====================================================================
-# Распределенные правила линковки и сборки сервера
+# Модульные правила линковки и сборки сервера
 # ====================================================================
 
 .PHONY: nbd-server clean-nbd
 
-# 1. Главный таргет для сборки декомпозированного сервера блочного устройства
+# 1. Главный таргет для сборки декомпозированного сервера (без flashsim_stubs.o)
 nbd-server: $(OBJ_DIR)/V$(TOP_MODULE).h hardware_bridge.o nbd_negotiation.o nbd_server.o sim_main.o
-	@echo "📦 Линковка модульного Verilator ZNS NBD сервера..."
+	@echo "📦 Линковка чистого автономного Verilator ZNS NBD сервера..."
 	$(CXX) $(CXXFLAGS) \
 		sim_main.o \
 		nbd_negotiation.o \

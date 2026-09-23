@@ -36,6 +36,8 @@ impl HostManagedFtl {
     }
 
     /// Логическая асинхронная запись (Host-FTL Write)
+    // /home/ilya/TestFlashSim/host_ftl/src/ftl.rs
+
     pub async fn logical_write(
         &mut self,
         logical_page_id: usize,
@@ -62,7 +64,7 @@ impl HostManagedFtl {
 
         let page_offset = (self.zones[zone_id].write_pointer / PAGE_SIZE as u64) as usize;
 
-        // Попытка физической записи с перехватом аппаратной блокировки RTL
+        // Первая попытка записи
         match self.append_to_zone(zone_id, data.clone()).await {
             Ok(_) => {}
             Err(ref e)
@@ -70,19 +72,31 @@ impl HostManagedFtl {
             {
                 println!("⚠️  [FTL] RTL заблокировал запись (ENOSPC). Инициализируем Out-of-Band сброс зоны {}...", zone_id);
 
-                // Автоматически очищаем контроллер через наш Out-of-Band канал
+                // 1. Аппаратно сбрасываем Verilator-схему и зануляем память через Unix-сокет
                 self.zone_reset(zone_id).await?;
 
+                // 2. ИСПРАВЛЕНИЕ: Переоткрываем девайс, чтобы сбросить внутренний триггер ошибки ENOSPC в ядре Linux
+                println!("🔄 [FTL] Переоткрытие /dev/nbd0 для очистки кэша ошибок ядра...");
+                use std::fs::OpenOptions;
+                use std::os::unix::fs::OpenOptionsExt;
+
+                let std_file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .custom_flags(libc::O_DIRECT | libc::O_SYNC)
+                    .open("/dev/nbd0")?;
+
+                // Обновляем файловый объект внутри tokio-uring
+                self.dev_file = File::from_std(std_file);
+
                 println!(
-                    "🚀 [FTL] Повторная отправка страницы в очищенную зону {}...",
-                    zone_id
+                    "🚀 [FTL] Повторная отправка страницы в полностью очищенное устройство..."
                 );
                 self.append_to_zone(zone_id, data).await?;
             }
             Err(e) => return Err(e),
         }
 
-        // Обновляем L2P таблицу только при успешной физической записи
         self.l2p_table[logical_page_id] = Some(PhysicalAddress {
             zone_id,
             page_offset,
